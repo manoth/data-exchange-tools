@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  data-exchange-tools:
+    build: .
+    container_name: data-exchange-tools
+    restart: unless-stopped
+    ports:
+      - "8899:8899"
+    volumes:
+      # Persist config, encryption keys, JWT secret, and uploaded/exported files
+      - ./data:/app/data
+    environment:
+      - PYTHONUNBUFFERED=1
+      - HOST=0.0.0.0
+      - PORT=8899
+      - DATA_DIR=/app/data
+    networks:
+      - dex-network
+    # Add extra_hosts if HosXP DB is on host machine
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+networks:
+  dex-network:
+    driver: bridge

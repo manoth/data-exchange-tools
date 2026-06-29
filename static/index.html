@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="เครื่องมือแปลงข้อมูล Exchange จากระบบ HDC สำหรับโรงพยาบาล">
+  <title>Data Exchange Tools</title>
+  <link rel="icon" href="/static/images/favicon.ico">
+  <link rel="apple-touch-icon" href="/static/images/logo.png">
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+
+<!-- Toast Container -->
+<div id="toast-container"></div>
+
+<!-- Loading Overlay -->
+<div id="loading-overlay" class="hidden">
+  <div class="loading-content">
+    <div class="spinner"></div>
+    <p>กำลังดำเนินการ...</p>
+  </div>
+</div>
+
+<!-- ============================================================
+     LOGIN PAGE
+     ============================================================ -->
+<div id="page-login" class="page hidden">
+  <div class="login-wrapper">
+    <div class="login-card glass-card animate-fadeIn">
+      <div class="login-logo">
+        <img src="/static/images/logo.png" alt="Logo" width="120" height="120">
+      </div>
+      <h1 class="login-title">Data Exchange Tools</h1>
+      <p class="login-subtitle">เครื่องมือแปลงข้อมูล Exchange จากระบบ HDC</p>
+
+      <form id="login-form" onsubmit="handleLogin(event)">
+        <div class="form-group">
+          <label for="login-username">ชื่อผู้ใช้</label>
+          <div class="input-wrapper">
+            <span class="input-icon">
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 0 0-16 0"/></svg>
+            </span>
+            <input type="text" id="login-username" placeholder="กรอกชื่อผู้ใช้" required autocomplete="username">
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="login-password">รหัสผ่าน</label>
+          <div class="input-wrapper">
+            <span class="input-icon">
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            </span>
+            <input type="password" id="login-password" placeholder="กรอกรหัสผ่าน" required autocomplete="current-password">
+            <button type="button" class="password-toggle" onclick="togglePassword(this)">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/></svg>
+            </button>
+          </div>
+        </div>
+        <div id="login-error" class="error-message hidden"></div>
+        <button type="submit" class="btn btn-primary btn-block btn-lg" id="btn-login">
+          <span class="btn-text">เข้าสู่ระบบ</span>
+          <span class="btn-loading hidden"><div class="spinner" style="width:20px;height:20px;"></div></span>
+        </button>
+      </form>
+
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================
+     ADMIN PASSWORD PAGE
+     ============================================================ -->
+<div id="page-admin-password" class="page hidden">
+  <div class="login-wrapper">
+    <div class="config-card glass-card animate-fadeIn">
+      <div class="config-header">
+        <span class="config-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        </span>
+        <h1 class="config-title">เปลี่ยนรหัสผ่านผู้ดูแลระบบ</h1>
+        <p class="config-subtitle">เข้าสู่ระบบครั้งแรกต้องเปลี่ยนจากรหัสผ่านเริ่มต้น</p>
+      </div>
+
+      <form id="admin-password-form" onsubmit="changeAdminPassword(event)">
+        <div class="form-group">
+          <label for="admin-old-password">รหัสผ่านเดิม</label>
+          <div class="input-wrapper">
+            <span class="input-icon">
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            </span>
+            <input type="password" id="admin-old-password" required autocomplete="current-password">
+            <button type="button" class="password-toggle" onclick="togglePassword(this)">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/></svg>
+            </button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="admin-new-password">รหัสผ่านใหม่</label>
+          <div class="input-wrapper">
+            <span class="input-icon">
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-8 9-4.5-1.5-8-4-8-9V5l8-3 8 3z"/></svg>
+            </span>
+            <input type="password" id="admin-new-password" required autocomplete="new-password">
+            <button type="button" class="password-toggle" onclick="togglePassword(this)">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/></svg>
+            </button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="admin-confirm-password">ยืนยันรหัสผ่านใหม่</label>
+          <div class="input-wrapper">
+            <span class="input-icon">
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+            </span>
+            <input type="password" id="admin-confirm-password" required autocomplete="new-password">
+            <button type="button" class="password-toggle" onclick="togglePassword(this)">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/></svg>
+            </button>
+          </div>
+        </div>
+        <div id="admin-password-error" class="error-message hidden"></div>
+        <button type="submit" class="btn btn-primary btn-block btn-lg">บันทึกรหัสผ่านใหม่</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================
+     CONFIG PAGE
+     ============================================================ -->
+<div id="page-config" class="page hidden">
+  <div class="login-wrapper">
+    <div class="config-card glass-card animate-fadeIn">
+      <button class="config-back-btn btn btn-link" onclick="returnFromConfig()">
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>
+        กลับ
+      </button>
+
+      <div class="config-header">
+        <span class="config-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5V19A9 3 0 0 0 21 19V5"/><path d="M3 12A9 3 0 0 0 21 12"/></svg>
+        </span>
+        <h1 class="config-title">ตั้งค่าเชื่อมต่อฐานข้อมูล</h1>
+        <p class="config-subtitle">กรอกข้อมูลสำหรับเชื่อมต่อฐานข้อมูล HosXP</p>
+      </div>
+
+      <form id="config-form">
+        <div class="form-group">
+          <label for="config-host">Host</label>
+          <div class="input-wrapper">
+            <span class="input-icon">
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="8" x="2" y="2" rx="2" ry="2"/><rect width="20" height="8" x="2" y="14" rx="2" ry="2"/><line x1="6" x2="6.01" y1="6" y2="6"/><line x1="6" x2="6.01" y1="18" y2="18"/></svg>
+            </span>
+            <input type="text" id="config-host" placeholder="เช่น 192.168.1.100" required>
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="config-port">Port</label>
+          <div class="input-wrapper">
+            <span class="input-icon">
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="8" x="2" y="2" rx="2" ry="2"/><rect width="20" height="8" x="2" y="14" rx="2" ry="2"/><line x1="6" x2="6.01" y1="6" y2="6"/><line x1="6" x2="6.01" y1="18" y2="18"/></svg>
+            </span>
+            <input type="number" id="config-port" value="3306" required>
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="config-database">Database</label>
+          <div class="input-wrapper">
+            <span class="input-icon">
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5V19A9 3 0 0 0 21 19V5"/><path d="M3 12A9 3 0 0 0 21 12"/></svg>
+            </span>
+            <input type="text" id="config-database" placeholder="เช่น hosxp_pcu" required>
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="config-username">Username</label>
+          <div class="input-wrapper">
+            <span class="input-icon">
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 0 0-16 0"/></svg>
+            </span>
+            <input type="text" id="config-username" placeholder="ชื่อผู้ใช้ฐานข้อมูล" required>
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="config-password">Password</label>
+          <div class="input-wrapper">
+            <span class="input-icon">
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            </span>
+            <input type="password" id="config-password" placeholder="รหัสผ่านฐานข้อมูล" required>
+            <button type="button" class="password-toggle" onclick="togglePassword(this)">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/></svg>
+            </button>
+          </div>
+        </div>
+      </form>
+
+      <div id="connection-status" class="connection-status hidden"></div>
+
+      <div class="config-actions">
+        <button type="button" class="btn btn-secondary" onclick="testConnection()">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg>
+          ทดสอบการเชื่อมต่อ
+        </button>
+        <button type="button" class="btn btn-primary" onclick="saveConfig()">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+          บันทึกการตั้งค่า
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================
+     SERVICE CONTROL PAGE
+     ============================================================ -->
+<div id="page-service" class="page hidden">
+  <div class="login-wrapper">
+    <div class="config-card glass-card animate-fadeIn">
+      <button class="config-back-btn btn btn-link" onclick="returnFromConfig()">
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>
+        กลับ
+      </button>
+
+      <div class="config-header">
+        <span class="config-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" x2="12" y1="2" y2="12"/></svg>
+        </span>
+        <h1 class="config-title">จัดการ service</h1>
+        <p class="config-subtitle">เฉพาะผู้ดูแลระบบเท่านั้น ใช้เมื่อต้องการหยุดให้บริการเว็บแอป</p>
+      </div>
+
+      <div id="service-status" class="connection-status warning">
+        <div class="status-content">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg>
+          <span>หากปิด service ผู้ใช้ทุกคนจะเข้าเว็บไม่ได้จนกว่าจะเปิดโปรแกรมใหม่</span>
+        </div>
+      </div>
+
+      <div class="config-actions">
+        <button type="button" class="btn btn-danger btn-block btn-lg" onclick="shutdownService()">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" x2="12" y1="2" y2="12"/></svg>
+          ปิด service
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================
+     DASHBOARD PAGE
+     ============================================================ -->
+<div id="page-dashboard" class="page hidden">
+  <div class="dashboard">
+
+    <!-- Navbar -->
+    <nav class="navbar">
+      <div class="navbar-left">
+        <button class="btn btn-icon sidebar-toggle" onclick="toggleSidebar()">
+          <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="18" y2="18"/></svg>
+        </button>
+        <img src="/static/images/logo.png" alt="Logo" class="navbar-logo" width="32" height="32">
+        <span class="navbar-title">Data Exchange Tools</span>
+      </div>
+      <div class="navbar-right">
+        <div class="user-info">
+          <span class="user-name" id="nav-username">-</span>
+          <span class="user-position" id="nav-position">-</span>
+        </div>
+        <button class="btn btn-icon admin-only hidden" onclick="showSection('settings')" title="ตั้งค่า">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+        </button>
+        <button class="btn btn-icon btn-danger admin-only hidden" onclick="shutdownService()" title="ปิด service">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" x2="12" y1="2" y2="12"/></svg>
+        </button>
+        <button class="btn btn-icon" onclick="logout()" title="ออกจากระบบ">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>
+        </button>
+      </div>
+    </nav>
+
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-menu">
+        <button class="sidebar-item active" data-section="upload" onclick="showSection('upload')">
+          <span class="sidebar-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 13v8"/><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="m8 17 4-4 4 4"/></svg>
+          </span>
+          <span class="sidebar-label">อัปโหลด & แปลงข้อมูล</span>
+        </button>
+        <button class="sidebar-item" data-section="history" onclick="showSection('history')">
+          <span class="sidebar-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          </span>
+          <span class="sidebar-label">ประวัติการแปลง</span>
+        </button>
+        <button class="sidebar-item admin-only hidden" data-section="settings" onclick="showSection('settings')">
+          <span class="sidebar-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+          </span>
+          <span class="sidebar-label">ตั้งค่า</span>
+        </button>
+      </div>
+      <div class="sidebar-footer">
+        <span class="version-text">v1.0.0</span>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content">
+
+      <!-- ==================== Upload Section ==================== -->
+      <div id="section-upload" class="section active">
+        <div class="section-header">
+          <span class="section-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 13v8"/><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="m8 17 4-4 4 4"/></svg>
+          </span>
+          <h2>อัปโหลดไฟล์ Exchange</h2>
+        </div>
+
+        <!-- Upload Drop Zone -->
+        <div class="upload-zone" id="upload-zone">
+          <div class="upload-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 13v8"/><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="m8 17 4-4 4 4"/></svg>
+          </div>
+          <p class="upload-text">ลากไฟล์มาวางที่นี่ หรือ</p>
+          <button type="button" class="btn btn-secondary" onclick="document.getElementById('file-input').click()">
+            เลือกไฟล์
+          </button>
+          <input type="file" id="file-input" accept=".xlsx" class="hidden">
+          <p class="upload-hint">รองรับไฟล์ .xlsx</p>
+        </div>
+
+        <!-- File Info Card -->
+        <div id="file-info" class="file-info glass-card hidden">
+          <div class="file-info-details">
+            <span class="file-info-icon">
+              <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M8 13h2"/><path d="M14 13h2"/><path d="M8 17h2"/><path d="M14 17h2"/></svg>
+            </span>
+            <div class="file-info-text">
+              <span class="file-name" id="file-name">-</span>
+              <span class="file-meta">
+                <span id="file-size">-</span> • <span id="file-rows">-</span> แถว
+              </span>
+            </div>
+          </div>
+          <button class="btn btn-icon btn-danger" onclick="resetUpload()" title="ลบไฟล์">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+          </button>
+        </div>
+
+        <!-- Progress Bar -->
+        <div id="progress-container" class="progress-bar-container hidden">
+          <div class="progress-bar" id="progress-bar" style="width: 0%"></div>
+        </div>
+
+        <!-- Preview Section -->
+        <div id="preview-section" class="hidden">
+          <div class="section-header" style="margin-top: 24px;">
+            <h3>ตัวอย่างข้อมูล (5 แถวแรก)</h3>
+            <span class="badge badge-info">ข้อมูลถูกปกปิด</span>
+          </div>
+          <div class="table-container table-responsive preview-table-container">
+            <table class="data-table">
+              <thead id="preview-thead"></thead>
+              <tbody id="preview-tbody"></tbody>
+            </table>
+          </div>
+          <div class="transform-action">
+            <button class="btn btn-primary btn-lg" onclick="transformData()" id="btn-transform">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg>
+              แปลงข้อมูล
+            </button>
+          </div>
+        </div>
+
+        <!-- Results Section -->
+        <div id="results-section" class="hidden">
+          <div class="results-header" style="margin-top: 24px;">
+            <div class="section-header" style="margin-bottom: 0;">
+              <h3>ผลลัพธ์การแปลงข้อมูล</h3>
+            </div>
+            <div class="stats-badges">
+              <span class="badge badge-success" id="matched-count">จับคู่ได้: 0</span>
+              <span class="badge badge-warning" id="unmatched-count">จับคู่ไม่ได้: 0</span>
+            </div>
+          </div>
+
+          <div class="controls-bar">
+            <div class="search-wrapper">
+              <span class="search-icon">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+              </span>
+              <input type="text" class="search-input" id="search-input" placeholder="ค้นหา..." oninput="handleSearch(this.value)">
+            </div>
+            <select class="rows-select" id="rows-select" onchange="handleRowsPerPageChange(this.value)">
+              <option value="20" selected>20 แถว</option>
+              <option value="50">50 แถว</option>
+              <option value="100">100 แถว</option>
+              <option value="200">200 แถว</option>
+            </select>
+            <button class="btn btn-success" onclick="exportExcel()">
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+              ส่งออก Excel
+            </button>
+          </div>
+
+          <div class="datatable-info" id="datatable-info">ทั้งหมด 0 แถว | แสดงผลหลังกรอง 0 แถว</div>
+
+          <div class="table-container table-responsive datatable-container">
+            <table class="data-table">
+              <thead id="results-thead"></thead>
+              <tbody id="results-tbody"></tbody>
+            </table>
+          </div>
+
+          <div class="pagination" id="pagination"></div>
+
+          <div class="new-upload-action">
+            <button class="btn btn-secondary" onclick="resetUpload()">
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 13v8"/><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="m8 17 4-4 4 4"/></svg>
+              อัปโหลดไฟล์ใหม่
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ==================== History Section ==================== -->
+      <div id="section-history" class="section">
+        <div class="section-header">
+          <span class="section-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          </span>
+          <h2>ประวัติการแปลงข้อมูล</h2>
+        </div>
+        <div class="table-container table-responsive">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>ไฟล์</th>
+                <th>วันที่</th>
+                <th>จำนวนแถว</th>
+                <th>สถานะ</th>
+                <th>ดำเนินการ</th>
+              </tr>
+            </thead>
+            <tbody id="history-tbody">
+              <tr>
+                <td colspan="5">
+                  <div class="empty-state">
+                    <span class="empty-icon">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                    </span>
+                    <p>ยังไม่มีประวัติการแปลงข้อมูล</p>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ==================== Settings Section ==================== -->
+      <div id="section-settings" class="section">
+        <div class="section-header">
+          <span class="section-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+          </span>
+          <h2>ตั้งค่า</h2>
+        </div>
+        <div class="glass-card">
+          <h3>การเชื่อมต่อฐานข้อมูล</h3>
+          <p class="text-secondary" style="margin-top: 8px; margin-bottom: 16px;">จัดการการเชื่อมต่อฐานข้อมูลและ service สำหรับผู้ดูแลระบบ</p>
+          <div id="settings-db-status" class="connection-status"></div>
+          <div style="margin-top: 16px;">
+            <button class="btn btn-secondary" onclick="showPage('config')">
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+              จัดการการเชื่อมต่อ
+            </button>
+            <button class="btn btn-danger" style="margin-left: 12px;" onclick="shutdownService()">
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" x2="12" y1="2" y2="12"/></svg>
+              ปิด service
+            </button>
+          </div>
+        </div>
+        <div class="glass-card" style="margin-top: 18px;">
+          <h3>Version Update</h3>
+          <p class="text-secondary" style="margin-top: 8px; margin-bottom: 16px;">ตรวจสอบ update script สำหรับผู้ดูแลระบบ</p>
+          <div id="version-status" class="connection-status"></div>
+          <div style="margin-top: 16px;">
+            <button class="btn btn-secondary" onclick="checkVersionUpdate()">
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
+              เช็ค Update
+            </button>
+            <button id="btn-run-update" class="btn btn-primary hidden" style="margin-left: 12px;" onclick="runUpdateScript()">
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m17 8-5-5-5 5"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/></svg>
+              Update
+            </button>
+          </div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<!-- Scripts -->
+<script src="/static/js/utils.js"></script>
+<script src="/static/js/auth.js"></script>
+<script src="/static/js/config.js"></script>
+<script src="/static/js/upload.js"></script>
+<script src="/static/js/app.js"></script>
+</body>
+</html>
