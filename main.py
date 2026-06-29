@@ -11,6 +11,9 @@ import threading
 import sys
 import json
 import subprocess
+import hashlib
+import urllib.request
+import urllib.parse
 from datetime import datetime
 
 from fastapi import FastAPI, File, UploadFile, Request, HTTPException, Depends
@@ -34,6 +37,9 @@ APP_VERSION = "1.0.0"
 UPLOADS_DIR = os.path.join(APP_DIR, "uploads")
 UPDATE_DIR = os.path.join(APP_DIR, "updates")
 UPDATE_MANIFEST = os.path.join(UPDATE_DIR, "manifest.json")
+DEFAULT_UPDATE_MANIFEST_URL = "https://github.com/manoth/data-exchange-tools/releases/latest/download/latest.json"
+UPDATE_MANIFEST_URL = os.environ.get("UPDATE_MANIFEST_URL", DEFAULT_UPDATE_MANIFEST_URL).strip()
+UPDATE_CHECK_INTERVAL_SECONDS = int(os.environ.get("UPDATE_CHECK_INTERVAL_SECONDS", "600"))
 STATIC_DIR = (
     os.path.join(sys._MEIPASS, "static")
     if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS")
@@ -47,6 +53,7 @@ app = FastAPI(title="Data Exchange Tools")
 upload_store = {}
 # เก็บประวัติการใช้งาน
 history_store = []
+update_cache = {"checked_at": None, "status": None}
 
 # ────────────────────────────────────────────
 # Startup Event
@@ -145,10 +152,63 @@ def _load_update_manifest() -> dict:
     return data if isinstance(data, dict) else {}
 
 
+def _load_online_update_manifest(force: bool = False) -> dict:
+    if not UPDATE_MANIFEST_URL:
+        return {}
+
+    try:
+        request = urllib.request.Request(
+            UPDATE_MANIFEST_URL,
+            headers={
+                "User-Agent": f"DataExchangeTools/{APP_VERSION}",
+                "Accept": "application/json",
+            },
+        )
+        with urllib.request.urlopen(request, timeout=8) as response:
+            if response.status >= 400:
+                return {}
+            payload = response.read(512 * 1024)
+        data = json.loads(payload.decode("utf-8"))
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _script_name_for_platform() -> str:
+    return "update.bat" if os.name == "nt" else "update.sh"
+
+
+def _get_manifest_script_url(manifest: dict) -> str:
+    if os.name == "nt":
+        return str(manifest.get("windows_script_url") or manifest.get("script_url") or "")
+    return str(manifest.get("linux_script_url") or manifest.get("script_url") or "")
+
+
+def _get_manifest_sha256(manifest: dict) -> str:
+    if os.name == "nt":
+        return str(
+            manifest.get("windows_sha256")
+            or manifest.get("script_sha256")
+            or manifest.get("sha256")
+            or ""
+        ).lower()
+    return str(
+        manifest.get("linux_sha256")
+        or manifest.get("script_sha256")
+        or manifest.get("sha256")
+        or ""
+    ).lower()
+
+
+def _is_safe_update_url(url: str) -> bool:
+    parsed = urllib.parse.urlparse(url)
+    return parsed.scheme == "https" and bool(parsed.netloc)
+
+
 def _get_update_script_path(manifest: dict) -> str:
     script_name = manifest.get("script")
     if not script_name:
-        script_name = "update.bat" if os.name == "nt" else "update.sh"
+        script_name = _script_name_for_platform()
     script_path = os.path.abspath(os.path.join(UPDATE_DIR, script_name))
     update_root = os.path.abspath(UPDATE_DIR)
     if not script_path.startswith(update_root + os.sep):
@@ -156,26 +216,98 @@ def _get_update_script_path(manifest: dict) -> str:
     return script_path
 
 
-def _get_update_status() -> dict:
-    manifest = _load_update_manifest()
+def _build_update_status(manifest: dict, source: str, online_error: str = "") -> dict:
     latest_version = str(manifest.get("version") or APP_VERSION)
     script_path = _get_update_script_path(manifest) if manifest else ""
     script_exists = bool(script_path and os.path.exists(script_path))
+    script_url = _get_manifest_script_url(manifest) if manifest else ""
+    online_script_ready = bool(script_url and _is_safe_update_url(script_url) and _get_manifest_sha256(manifest))
     update_available = (
         bool(manifest)
         and _version_parts(latest_version) > _version_parts(APP_VERSION)
-        and script_exists
+        and (script_exists or online_script_ready)
     )
-    message = "พร้อมอัปเดต" if update_available else "ยังไม่พบ update script ที่ใหม่กว่า"
+    if update_available:
+        message = "พร้อมอัปเดตออนไลน์" if source == "online" else "พร้อมอัปเดต"
+    elif online_error:
+        message = online_error
+    else:
+        message = "ยังไม่พบ update script ที่ใหม่กว่า"
     return {
         "success": True,
         "current_version": APP_VERSION,
         "latest_version": latest_version,
         "update_available": update_available,
         "script_exists": script_exists,
+        "online_script": bool(script_url),
+        "source": source,
         "notes": str(manifest.get("notes") or ""),
         "message": message,
+        "manifest": manifest,
     }
+
+
+def _get_update_status(force: bool = False) -> dict:
+    now = datetime.now()
+    if (
+        not force
+        and update_cache.get("checked_at")
+        and update_cache.get("status")
+        and (now - update_cache["checked_at"]).total_seconds() < UPDATE_CHECK_INTERVAL_SECONDS
+    ):
+        status = dict(update_cache["status"])
+        status.pop("manifest", None)
+        return status
+
+    online_manifest = _load_online_update_manifest(force=force)
+    if online_manifest:
+        status = _build_update_status(online_manifest, "online")
+    else:
+        local_manifest = _load_update_manifest()
+        status = _build_update_status(local_manifest, "local", "เช็ก online ไม่สำเร็จ ใช้ local manifest แทน")
+
+    update_cache["checked_at"] = now
+    update_cache["status"] = status
+    public_status = dict(status)
+    public_status.pop("manifest", None)
+    return public_status
+
+
+def _get_active_update_manifest() -> dict:
+    cached = update_cache.get("status") or {}
+    manifest = cached.get("manifest")
+    if isinstance(manifest, dict) and manifest:
+        return manifest
+    _get_update_status(force=True)
+    cached = update_cache.get("status") or {}
+    manifest = cached.get("manifest")
+    return manifest if isinstance(manifest, dict) else {}
+
+
+def _download_update_script(manifest: dict) -> str:
+    script_url = _get_manifest_script_url(manifest)
+    expected_sha256 = _get_manifest_sha256(manifest)
+    if not script_url:
+        return _get_update_script_path(manifest)
+    if not _is_safe_update_url(script_url):
+        raise ValueError("update URL ต้องเป็น https เท่านั้น")
+    if not expected_sha256:
+        raise ValueError("online update ต้องระบุ sha256 เพื่อยืนยันไฟล์")
+
+    os.makedirs(UPDATE_DIR, exist_ok=True)
+    script_name = _script_name_for_platform()
+    downloaded_path = os.path.abspath(os.path.join(UPDATE_DIR, f"downloaded_{script_name}"))
+    request = urllib.request.Request(script_url, headers={"User-Agent": f"DataExchangeTools/{APP_VERSION}"})
+    with urllib.request.urlopen(request, timeout=30) as response:
+        payload = response.read(10 * 1024 * 1024)
+    actual_sha256 = hashlib.sha256(payload).hexdigest().lower()
+    if actual_sha256 != expected_sha256:
+        raise ValueError("sha256 ของ update script ไม่ตรงกับ manifest")
+    with open(downloaded_path, "wb") as f:
+        f.write(payload)
+    if os.name != "nt":
+        os.chmod(downloaded_path, 0o700)
+    return downloaded_path
 
 
 # ────────────────────────────────────────────
@@ -320,10 +452,10 @@ async def admin_shutdown(current_admin: dict = Depends(get_current_admin)):
 
 
 @app.get("/api/version/status")
-async def version_status(current_admin: dict = Depends(get_current_admin)):
+async def version_status(force: bool = False, current_admin: dict = Depends(get_current_admin)):
     """ตรวจสอบว่ามี update script รุ่นใหม่หรือไม่"""
     try:
-        return _get_update_status()
+        return _get_update_status(force=force)
     except Exception as e:
         return JSONResponse(
             status_code=500,
@@ -340,14 +472,19 @@ async def version_status(current_admin: dict = Depends(get_current_admin)):
 
 @app.post("/api/admin/update")
 async def admin_update(current_admin: dict = Depends(get_current_admin)):
-    """รัน update script ที่อยู่ในโฟลเดอร์ updates เท่านั้น"""
+    """ดาวน์โหลด/รัน update script หลังตรวจ manifest และ hash"""
     try:
-        manifest = _load_update_manifest()
-        status = _get_update_status()
+        status = _get_update_status(force=True)
         if not status.get("update_available"):
             return JSONResponse(status_code=400, content=status)
 
-        script_path = _get_update_script_path(manifest)
+        manifest = _get_active_update_manifest()
+        script_path = _download_update_script(manifest)
+        if not script_path or not os.path.exists(script_path):
+            return JSONResponse(
+                status_code=400,
+                content={"success": False, "message": "ไม่พบ update script ที่พร้อมใช้งาน"}
+            )
         log_path = os.path.join(UPDATE_DIR, "update.log")
         command = ["cmd", "/c", script_path] if os.name == "nt" else ["sh", script_path]
         log_file = open(log_path, "a", encoding="utf-8")

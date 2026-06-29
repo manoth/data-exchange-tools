@@ -58,6 +58,7 @@ async function handleLogin(event) {
         } else if (result.configured === true) {
           showPage('dashboard');
           showSection('upload');
+          if (typeof startUpdateAutoCheck === 'function') startUpdateAutoCheck();
         } else {
           showPage('config');
         }

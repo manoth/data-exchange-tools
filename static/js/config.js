@@ -151,6 +151,7 @@ async function saveConfig() {
       setTimeout(() => {
         showPage('dashboard');
         showSection('upload');
+        if (typeof startUpdateAutoCheck === 'function') startUpdateAutoCheck();
         showToast('ตั้งค่าฐานข้อมูลสำเร็จ', 'success');
       }, 900);
     } else {
@@ -224,50 +225,61 @@ async function shutdownService() {
 }
 
 /**
- * Check local update manifest. Admin only.
+ * Check online/local update manifest. Admin only.
  */
-async function checkVersionUpdate() {
+async function checkVersionUpdate(force = true, silent = false) {
   const statusDiv = document.getElementById('version-status');
   const updateBtn = document.getElementById('btn-run-update');
-  if (!statusDiv) return;
+  if (!statusDiv && silent) return;
 
-  statusDiv.className = 'connection-status testing';
-  statusDiv.innerHTML = `
-    <div class="status-content">
-      <div class="spinner" style="width:20px;height:20px;"></div>
-      <span>กำลังตรวจสอบ update...</span>
-    </div>
-  `;
-  if (updateBtn) updateBtn.classList.add('hidden');
-
-  const result = await api('/api/version/status', { method: 'GET' });
-  if (!result || !result.success) {
-    statusDiv.className = 'connection-status error';
+  if (statusDiv) {
+    statusDiv.className = 'connection-status testing';
     statusDiv.innerHTML = `
       <div class="status-content">
-        <span>${escapeHtml(result?.message || 'ไม่สามารถตรวจสอบ update ได้')}</span>
+        <div class="spinner" style="width:20px;height:20px;"></div>
+        <span>กำลังตรวจสอบ update...</span>
       </div>
     `;
+  }
+  if (updateBtn) updateBtn.classList.add('hidden');
+
+  const query = force ? '?force=true' : '';
+  const result = await api(`/api/version/status${query}`, { method: 'GET' });
+  if (!result || !result.success) {
+    if (statusDiv) {
+      statusDiv.className = 'connection-status error';
+      statusDiv.innerHTML = `
+        <div class="status-content">
+          <span>${escapeHtml(result?.message || 'ไม่สามารถตรวจสอบ update ได้')}</span>
+        </div>
+      `;
+    }
     return;
   }
 
   const notes = result.notes ? ` (${escapeHtml(result.notes)})` : '';
+  const source = result.source === 'online' ? 'online' : 'local';
   if (result.update_available) {
-    statusDiv.className = 'connection-status success';
-    statusDiv.innerHTML = `
-      <div class="status-content">
-        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
-        <span>มี update: v${escapeHtml(result.latest_version)} | ปัจจุบัน v${escapeHtml(result.current_version)}${notes}</span>
-      </div>
-    `;
+    if (statusDiv) {
+      statusDiv.className = 'connection-status success';
+      statusDiv.innerHTML = `
+        <div class="status-content">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+          <span>มี update ${source}: v${escapeHtml(result.latest_version)} | ปัจจุบัน v${escapeHtml(result.current_version)}${notes}</span>
+        </div>
+      `;
+    }
     if (updateBtn) updateBtn.classList.remove('hidden');
+    if (silent) showToast(`มี update v${result.latest_version}`, 'info');
   } else {
-    statusDiv.className = 'connection-status';
-    statusDiv.innerHTML = `
-      <div class="status-content">
-        <span>เวอร์ชันปัจจุบัน v${escapeHtml(result.current_version)} | ${escapeHtml(result.message || 'ยังไม่มี update')}</span>
-      </div>
-    `;
+    if (statusDiv) {
+      statusDiv.className = 'connection-status';
+      statusDiv.innerHTML = `
+        <div class="status-content">
+          <span>เวอร์ชันปัจจุบัน v${escapeHtml(result.current_version)} | ${escapeHtml(result.message || 'ยังไม่มี update')}</span>
+        </div>
+      `;
+    }
   }
 }
 
@@ -275,7 +287,7 @@ async function checkVersionUpdate() {
  * Run detected update script. Admin only.
  */
 async function runUpdateScript() {
-  const confirmed = window.confirm('ยืนยันเริ่ม update script? ระบบอาจต้องเปิดโปรแกรมใหม่หลังอัปเดต');
+  const confirmed = window.confirm('ยืนยันเริ่ม online update? ระบบอาจต้องเปิดโปรแกรมใหม่หลังอัปเดต');
   if (!confirmed) return;
 
   const statusDiv = document.getElementById('version-status');

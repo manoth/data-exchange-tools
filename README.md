@@ -6,7 +6,7 @@
 
 - ตั้งค่าฐานข้อมูลได้เฉพาะ local admin
 - ปิด service ได้เฉพาะ local admin
-- ตรวจสอบและรัน update script ได้เฉพาะ local admin
+- ตรวจสอบ online update ทุก 10 นาที และรัน update script ได้เฉพาะ local admin
 - local admin เริ่มต้นคือ `admin` / `admin` และบังคับเปลี่ยนรหัสผ่านครั้งแรก
 - Login ด้วย `opduser.loginname` และ `opduser.passweb = MD5(password)`
 - ตั้งค่าฐานข้อมูล MySQL/MariaDB ของ HosXP ผ่านหน้าเว็บ
@@ -69,9 +69,57 @@ Login ด้วย local admin แล้วกดปุ่ม “ปิด servi
 
 เมื่อปิดแล้วผู้ใช้ทุกคนจะเข้าเว็บไม่ได้จนกว่าจะเปิดโปรแกรมหรือ container ใหม่
 
-## การอัปเดตโปรแกรม
+## การอัปเดตโปรแกรมแบบ Online
 
-ระบบจะตรวจ update จากไฟล์ในโฟลเดอร์ `updates/` ที่อยู่ข้างไฟล์โปรแกรมหรือใน `DATA_DIR`
+ระบบจะตรวจ update จาก online manifest ทุก 10 นาทีเมื่อ admin ใช้งานอยู่ และยัง fallback ไปใช้ไฟล์ในโฟลเดอร์ `updates/` ได้ถ้าเช็ก online ไม่สำเร็จ
+
+ค่าเริ่มต้นของ online manifest คือ
+
+```text
+https://github.com/manoth/data-exchange-tools/releases/latest/download/latest.json
+```
+
+สามารถเปลี่ยน URL ได้ด้วย environment variable:
+
+```bash
+UPDATE_MANIFEST_URL=https://your-domain.example/data-exchange-tools/latest.json
+```
+
+ตัวอย่าง `latest.json` สำหรับ GitHub Release หรือ update server
+
+```json
+{
+  "version": "1.0.1",
+  "notes": "ปรับปรุงการแสดงผลตาราง",
+  "windows_script_url": "https://your-domain.example/data-exchange-tools/update-1.0.1.bat",
+  "windows_sha256": "PUT_WINDOWS_UPDATE_BAT_SHA256_HERE",
+  "linux_script_url": "https://your-domain.example/data-exchange-tools/update-1.0.1.sh",
+  "linux_sha256": "PUT_LINUX_UPDATE_SH_SHA256_HERE"
+}
+```
+
+ข้อกำหนดด้านความปลอดภัย:
+
+- update URL ต้องเป็น `https`
+- online update ต้องมี `sha256` ของ script ให้ตรงกับไฟล์จริง
+- ระบบจะแจ้งเตือนเมื่อพบ update แต่ต้องให้ admin กด “Update” เอง
+- ถ้าใช้งาน repo แบบ private ต้องใช้ update URL ที่ client เข้าถึงได้ เช่น GitHub Release/public asset, web server ภายใน, หรือ object storage ที่กำหนดสิทธิ์ไว้
+
+คำนวณ sha256:
+
+```bash
+shasum -a 256 update-1.0.1.sh
+```
+
+บน Windows PowerShell:
+
+```powershell
+Get-FileHash .\update-1.0.1.bat -Algorithm SHA256
+```
+
+## การอัปเดตแบบ Local Fallback
+
+ถ้าไม่ใช้ online update สามารถวางไฟล์ใน `updates/` ข้างไฟล์โปรแกรมหรือใน `DATA_DIR`
 
 ตัวอย่าง `updates/manifest.json`
 

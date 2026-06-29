@@ -2,6 +2,8 @@
 // Main Application Module - Data Exchange Tools
 // ============================================================
 
+let updateCheckTimer = null;
+
 /**
  * Show a page (login, config, dashboard)
  */
@@ -124,6 +126,21 @@ function applyRoleVisibility() {
   }
 }
 
+function startUpdateAutoCheck() {
+  if (!isAdminSessionReady() || typeof checkVersionUpdate !== 'function') return;
+  if (updateCheckTimer) return;
+
+  checkVersionUpdate(false, true);
+  updateCheckTimer = window.setInterval(() => {
+    if (!isAdminSessionReady()) {
+      window.clearInterval(updateCheckTimer);
+      updateCheckTimer = null;
+      return;
+    }
+    checkVersionUpdate(false, true);
+  }, 10 * 60 * 1000);
+}
+
 /**
  * Load settings page status
  */
@@ -159,7 +176,7 @@ async function loadSettingsStatus() {
   }
 
   if (typeof checkVersionUpdate === 'function' && isAdminSessionReady()) {
-    checkVersionUpdate();
+    checkVersionUpdate(true, false);
   }
 }
 
@@ -180,6 +197,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         const configured = await checkConfigStatus();
         if (configured) {
           goToUploadPage();
+          startUpdateAutoCheck();
         } else {
           showPage('config');
         }
