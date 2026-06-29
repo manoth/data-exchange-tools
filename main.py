@@ -15,11 +15,11 @@ import hashlib
 import urllib.request
 import urllib.parse
 import time
+import zipfile
 from datetime import datetime
 
 from fastapi import FastAPI, File, UploadFile, Request, HTTPException, Depends
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
 
 from config import (
     APP_DIR, load_config, save_config, test_connection, is_configured,
@@ -34,18 +34,20 @@ from models import (
 from transform import process_upload, transform_data, export_excel
 
 # กำหนด path
-APP_VERSION = "0.0.3"
+APP_VERSION = "0.0.4"
 UPLOADS_DIR = os.path.join(APP_DIR, "uploads")
 UPDATE_DIR = os.path.join(APP_DIR, "updates")
 UPDATE_MANIFEST = os.path.join(UPDATE_DIR, "manifest.json")
+WEB_VERSION_FILE = os.path.join(UPDATE_DIR, "frontend_version.json")
 DEFAULT_UPDATE_MANIFEST_URL = "https://github.com/manoth/data-exchange-tools/releases/latest/download/latest.json"
 UPDATE_MANIFEST_URL = os.environ.get("UPDATE_MANIFEST_URL", DEFAULT_UPDATE_MANIFEST_URL).strip()
 UPDATE_CHECK_INTERVAL_SECONDS = int(os.environ.get("UPDATE_CHECK_INTERVAL_SECONDS", "600"))
-STATIC_DIR = (
+BUNDLED_STATIC_DIR = (
     os.path.join(sys._MEIPASS, "static")
     if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS")
     else os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 )
+STATIC_OVERRIDE_DIR = os.path.join(APP_DIR, "static") if getattr(sys, "frozen", False) else BUNDLED_STATIC_DIR
 
 # สร้าง FastAPI app
 app = FastAPI(title="Data Exchange Tools")
@@ -65,22 +67,47 @@ async def startup_event():
     """สร้างโฟลเดอร์ที่จำเป็นเมื่อเริ่มต้นแอป"""
     os.makedirs(UPLOADS_DIR, exist_ok=True)
     os.makedirs(UPDATE_DIR, exist_ok=True)
-    os.makedirs(STATIC_DIR, exist_ok=True)
+    if getattr(sys, "frozen", False):
+        os.makedirs(STATIC_OVERRIDE_DIR, exist_ok=True)
 
 
 # ────────────────────────────────────────────
 # Static Files & Index
 # ────────────────────────────────────────────
 
-# Mount static files
-if os.path.exists(STATIC_DIR):
-    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+def _safe_join(base_dir: str, relative_path: str) -> str:
+    base = os.path.abspath(base_dir)
+    target = os.path.abspath(os.path.join(base, relative_path))
+    if target != base and not target.startswith(base + os.sep):
+        return ""
+    return target
+
+
+def _resolve_static_path(relative_path: str) -> str:
+    clean_path = relative_path.replace("\\", "/").lstrip("/")
+    if getattr(sys, "frozen", False):
+        override_path = _safe_join(STATIC_OVERRIDE_DIR, clean_path)
+        if override_path and os.path.exists(override_path) and os.path.isfile(override_path):
+            return override_path
+    bundled_path = _safe_join(BUNDLED_STATIC_DIR, clean_path)
+    if bundled_path and os.path.exists(bundled_path) and os.path.isfile(bundled_path):
+        return bundled_path
+    return ""
+
+
+@app.get("/static/{path:path}")
+async def serve_static(path: str):
+    """เสิร์ฟ static files โดยใช้ไฟล์ frontend ที่ update แล้วก่อน แล้วค่อย fallback ไป bundled static"""
+    file_path = _resolve_static_path(path)
+    if not file_path:
+        raise HTTPException(status_code=404, detail="ไม่พบไฟล์")
+    return FileResponse(file_path)
 
 
 @app.get("/", response_class=HTMLResponse)
 async def serve_index():
     """แสดงหน้าแรก index.html"""
-    index_path = os.path.join(STATIC_DIR, "index.html")
+    index_path = _resolve_static_path("index.html")
     if os.path.exists(index_path):
         with open(index_path, "r", encoding="utf-8") as f:
             return HTMLResponse(content=f.read())
@@ -145,6 +172,23 @@ def _version_parts(version: str) -> tuple:
     return tuple((parts + [0, 0, 0])[:3])
 
 
+def _get_installed_web_version() -> str:
+    if not os.path.exists(WEB_VERSION_FILE):
+        return APP_VERSION
+    try:
+        with open(WEB_VERSION_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        version = str(data.get("version") or "")
+        return version or APP_VERSION
+    except Exception:
+        return APP_VERSION
+
+
+def _get_current_version() -> str:
+    web_version = _get_installed_web_version()
+    return web_version if _version_parts(web_version) > _version_parts(APP_VERSION) else APP_VERSION
+
+
 def _load_update_manifest() -> dict:
     if not os.path.exists(UPDATE_MANIFEST):
         return {}
@@ -196,6 +240,15 @@ def _get_manifest_exe_url(manifest: dict) -> str:
     )
 
 
+def _get_manifest_frontend_zip_url(manifest: dict) -> str:
+    return str(
+        manifest.get("frontend_zip_url")
+        or manifest.get("web_zip_url")
+        or manifest.get("static_zip_url")
+        or ""
+    )
+
+
 def _get_manifest_sha256(manifest: dict) -> str:
     if os.name == "nt":
         return str(
@@ -223,6 +276,15 @@ def _get_manifest_exe_sha256(manifest: dict) -> str:
     ).lower()
 
 
+def _get_manifest_frontend_zip_sha256(manifest: dict) -> str:
+    return str(
+        manifest.get("frontend_zip_sha256")
+        or manifest.get("web_zip_sha256")
+        or manifest.get("static_zip_sha256")
+        or ""
+    ).lower()
+
+
 def _is_safe_update_url(url: str) -> bool:
     parsed = urllib.parse.urlparse(url)
     return parsed.scheme == "https" and bool(parsed.netloc)
@@ -240,17 +302,24 @@ def _get_update_script_path(manifest: dict) -> str:
 
 
 def _build_update_status(manifest: dict, source: str, online_error: str = "") -> dict:
+    current_version = _get_current_version()
     latest_version = str(manifest.get("version") or APP_VERSION)
     script_path = _get_update_script_path(manifest) if manifest else ""
     script_exists = bool(script_path and os.path.exists(script_path))
     script_url = _get_manifest_script_url(manifest) if manifest else ""
     exe_url = _get_manifest_exe_url(manifest) if manifest else ""
+    frontend_zip_url = _get_manifest_frontend_zip_url(manifest) if manifest else ""
     online_script_ready = bool(script_url and _is_safe_update_url(script_url) and _get_manifest_sha256(manifest))
     online_exe_ready = bool(exe_url and _is_safe_update_url(exe_url) and _get_manifest_exe_sha256(manifest))
+    frontend_ready = bool(
+        frontend_zip_url
+        and _is_safe_update_url(frontend_zip_url)
+        and _get_manifest_frontend_zip_sha256(manifest)
+    )
     update_available = (
         bool(manifest)
-        and _version_parts(latest_version) > _version_parts(APP_VERSION)
-        and (script_exists or online_script_ready or online_exe_ready)
+        and _version_parts(latest_version) > _version_parts(current_version)
+        and (script_exists or online_script_ready or online_exe_ready or frontend_ready)
     )
     if update_available:
         message = "พร้อมอัปเดตออนไลน์" if source == "online" else "พร้อมอัปเดต"
@@ -260,12 +329,15 @@ def _build_update_status(manifest: dict, source: str, online_error: str = "") ->
         message = "ยังไม่พบ update script ที่ใหม่กว่า"
     return {
         "success": True,
-        "current_version": APP_VERSION,
+        "current_version": current_version,
+        "app_version": APP_VERSION,
+        "frontend_version": _get_installed_web_version(),
         "latest_version": latest_version,
         "update_available": update_available,
         "script_exists": script_exists,
         "online_script": bool(script_url),
         "online_exe": bool(exe_url),
+        "frontend_zip": bool(frontend_zip_url),
         "source": source,
         "notes": str(manifest.get("notes") or ""),
         "message": message,
@@ -364,6 +436,63 @@ def _download_update_exe(manifest: dict) -> str:
     os.makedirs(UPDATE_DIR, exist_ok=True)
     exe_path = os.path.abspath(os.path.join(UPDATE_DIR, "DataExchangeTools.new.exe"))
     return _download_url_to_file(exe_url, expected_sha256, exe_path, 500 * 1024 * 1024)
+
+
+def _download_frontend_zip(manifest: dict) -> str:
+    zip_url = _get_manifest_frontend_zip_url(manifest)
+    expected_sha256 = _get_manifest_frontend_zip_sha256(manifest)
+    if not zip_url:
+        return ""
+
+    os.makedirs(UPDATE_DIR, exist_ok=True)
+    zip_path = os.path.abspath(os.path.join(UPDATE_DIR, "frontend_update.zip"))
+    return _download_url_to_file(zip_url, expected_sha256, zip_path, 80 * 1024 * 1024)
+
+
+def _validate_zip_member(member_name: str) -> str:
+    normalized = member_name.replace("\\", "/").lstrip("/")
+    if not normalized or normalized.endswith("/"):
+        return ""
+    if normalized.startswith("static/"):
+        normalized = normalized[len("static/"):]
+    if normalized.startswith("../") or "/../" in normalized or normalized == "..":
+        return ""
+    allowed_roots = ("css/", "js/", "images/", "index.html")
+    if not any(normalized == root.rstrip("/") or normalized.startswith(root) for root in allowed_roots):
+        return ""
+    return normalized
+
+
+def _apply_frontend_zip(zip_path: str, version: str) -> int:
+    if not zip_path or not os.path.exists(zip_path):
+        raise ValueError("ไม่พบ frontend zip")
+
+    os.makedirs(STATIC_OVERRIDE_DIR, exist_ok=True)
+    extracted_count = 0
+    with zipfile.ZipFile(zip_path, "r") as archive:
+        for member in archive.infolist():
+            relative_name = _validate_zip_member(member.filename)
+            if not relative_name:
+                continue
+            target_path = _safe_join(STATIC_OVERRIDE_DIR, relative_name)
+            if not target_path:
+                continue
+            os.makedirs(os.path.dirname(target_path), exist_ok=True)
+            with archive.open(member, "r") as src, open(target_path, "wb") as dst:
+                shutil.copyfileobj(src, dst)
+            extracted_count += 1
+
+    if extracted_count == 0:
+        raise ValueError("frontend zip ไม่มีไฟล์ที่อนุญาตให้อัปเดต")
+
+    with open(WEB_VERSION_FILE, "w", encoding="utf-8") as f:
+        json.dump({
+            "version": version,
+            "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        }, f, ensure_ascii=False, indent=2)
+    update_cache["checked_at"] = None
+    update_cache["status"] = None
+    return extracted_count
 
 
 def _write_windows_self_updater(new_exe_path: str) -> str:
@@ -578,6 +707,18 @@ async def admin_update(current_admin: dict = Depends(get_current_admin)):
 
         manifest = _get_active_update_manifest()
         exe_url = _get_manifest_exe_url(manifest)
+        frontend_zip_url = _get_manifest_frontend_zip_url(manifest)
+        if frontend_zip_url and not exe_url:
+            zip_path = _download_frontend_zip(manifest)
+            file_count = _apply_frontend_zip(zip_path, status["latest_version"])
+            return {
+                "success": True,
+                "message": f"อัปเดตหน้าเว็บสำเร็จ {file_count} ไฟล์ กรุณา refresh หน้าเว็บ",
+                "current_version": _get_current_version(),
+                "latest_version": status["latest_version"],
+                "reload_required": True,
+            }
+
         if exe_url:
             new_exe_path = _download_update_exe(manifest)
             updater_path = _write_windows_self_updater(new_exe_path)

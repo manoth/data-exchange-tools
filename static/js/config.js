@@ -287,7 +287,7 @@ async function checkVersionUpdate(force = true, silent = false) {
  * Run detected update script. Admin only.
  */
 async function runUpdateScript() {
-  const confirmed = window.confirm('ยืนยันเริ่ม online update? ระบบอาจต้องเปิดโปรแกรมใหม่หลังอัปเดต');
+  const confirmed = window.confirm('ยืนยันเริ่ม online update? ถ้าเป็น update หน้าเว็บ ระบบจะ refresh หน้าให้เอง');
   if (!confirmed) return;
 
   const statusDiv = document.getElementById('version-status');
@@ -298,7 +298,7 @@ async function runUpdateScript() {
     statusDiv.innerHTML = `
       <div class="status-content">
         <div class="spinner" style="width:20px;height:20px;"></div>
-        <span>กำลังเริ่ม update script...</span>
+        <span>กำลังเริ่ม online update...</span>
       </div>
     `;
   }
@@ -315,7 +315,12 @@ async function runUpdateScript() {
         </div>
       `;
     }
-    showToast('เริ่ม update แล้ว', 'success');
+    showToast(result.reload_required ? 'อัปเดตหน้าเว็บแล้ว กำลัง refresh...' : 'เริ่ม update แล้ว', 'success');
+    if (result.reload_required) {
+      setTimeout(() => {
+        window.location.reload();
+      }, 1500);
+    }
   } else {
     const msg = result?.message || 'ไม่สามารถเริ่ม update ได้';
     if (statusDiv) {

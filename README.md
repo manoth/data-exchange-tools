@@ -89,19 +89,44 @@ UPDATE_MANIFEST_URL=https://your-domain.example/data-exchange-tools/latest.json
 
 ```json
 {
-  "version": "0.0.3",
+  "version": "0.0.4",
   "notes": "ปรับปรุงหน้าเว็บและระบบอัปเดต",
-  "windows_exe_url": "https://your-domain.example/data-exchange-tools/DataExchangeTools-0.0.3.exe",
+  "windows_exe_url": "https://your-domain.example/data-exchange-tools/DataExchangeTools-0.0.4.exe",
   "windows_exe_sha256": "PUT_WINDOWS_EXE_SHA256_HERE",
   "linux_script_url": "https://your-domain.example/data-exchange-tools/update-1.0.1.sh",
   "linux_sha256": "PUT_LINUX_UPDATE_SH_SHA256_HERE"
 }
 ```
 
+ถ้าแก้เฉพาะ frontend เช่น `index.html`, `static/js/*.js`, `static/css/*.css`, หรือรูปภาพ สามารถปล่อยเป็น zip ได้โดยไม่ต้อง restart service:
+
+```json
+{
+  "version": "0.0.5",
+  "notes": "ปรับปรุงหน้าเว็บ",
+  "frontend_zip_url": "https://your-domain.example/data-exchange-tools/frontend-0.0.5.zip",
+  "frontend_zip_sha256": "PUT_FRONTEND_ZIP_SHA256_HERE"
+}
+```
+
+โครงสร้าง zip รองรับไฟล์เหล่านี้:
+
+```text
+index.html
+css/style.css
+js/app.js
+js/config.js
+js/upload.js
+images/logo.png
+```
+
+หรือจะ zip โดยมี root เป็น `static/` ก็ได้ เช่น `static/index.html`, `static/js/app.js`
+
 ข้อกำหนดด้านความปลอดภัย:
 
 - update URL ต้องเป็น `https`
 - Windows `.exe` สามารถใช้ `windows_exe_url` และ `windows_exe_sha256` เพื่อให้โปรแกรมดาวน์โหลด exe ใหม่ แทนที่ตัวเอง และเปิดโปรแกรมใหม่อัตโนมัติ
+- Frontend-only update สามารถใช้ `frontend_zip_url` และ `frontend_zip_sha256` เพื่อให้ service ที่กำลังรันอยู่เปลี่ยนหน้าเว็บได้ทันที แล้ว refresh หน้าเว็บ
 - online update ต้องมี `sha256` ของ exe หรือ script ให้ตรงกับไฟล์จริง
 - ระบบจะแจ้งเตือนเมื่อพบ update แต่ต้องให้ admin กด “Update” เอง
 - ถ้าใช้งาน repo แบบ private ต้องใช้ update URL ที่ client เข้าถึงได้ เช่น GitHub Release/public asset, web server ภายใน, หรือ object storage ที่กำหนดสิทธิ์ไว้
@@ -115,7 +140,7 @@ shasum -a 256 update-1.0.1.sh
 บน Windows PowerShell:
 
 ```powershell
-Get-FileHash .\DataExchangeTools-0.0.3.exe -Algorithm SHA256
+Get-FileHash .\DataExchangeTools-0.0.4.exe -Algorithm SHA256
 ```
 
 ## การอัปเดตแบบ Local Fallback
