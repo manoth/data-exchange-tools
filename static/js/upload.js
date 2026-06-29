@@ -12,6 +12,8 @@ let rowsPerPage = 20;
 let sortCol = -1;
 let sortDir = 'asc';
 let searchTerm = '';
+let availableFacilities = [];
+let selectedHoscodes = [];
 
 /**
  * Initialize upload zone with drag & drop
@@ -119,6 +121,8 @@ async function uploadFile(file) {
 
     if (result && result.success) {
       currentFileId = result.file_id;
+      availableFacilities = result.facilities || [];
+      selectedHoscodes = [];
 
       // Show file info
       document.getElementById('file-name').textContent = file.name;
@@ -132,6 +136,7 @@ async function uploadFile(file) {
         // Show preview
         if (result.preview && result.columns) {
           renderPreviewTable(result.preview, result.columns);
+          renderFacilitySelector();
           document.getElementById('preview-section').classList.remove('hidden');
         }
 
@@ -176,6 +181,112 @@ function renderPreviewTable(rows, columns) {
   tbody.innerHTML = bodyHtml;
 }
 
+function getSelectedHoscodesPayload() {
+  return selectedHoscodes.length ? selectedHoscodes : [];
+}
+
+function jsString(value) {
+  return JSON.stringify(String(value ?? ''));
+}
+
+function renderFacilitySelector() {
+  const section = document.getElementById('facility-filter-section');
+  if (!section) return;
+
+  if (!availableFacilities.length) {
+    section.classList.add('hidden');
+    return;
+  }
+
+  section.classList.remove('hidden');
+  updateFacilityLabel();
+  renderFacilityOptions('');
+}
+
+function toggleFacilityDropdown() {
+  const dropdown = document.getElementById('facility-dropdown');
+  const search = document.getElementById('facility-search');
+  if (!dropdown) return;
+  dropdown.classList.toggle('hidden');
+  if (!dropdown.classList.contains('hidden') && search) {
+    search.value = '';
+    renderFacilityOptions('');
+    search.focus();
+  }
+}
+
+function selectAllFacilities() {
+  selectedHoscodes = [];
+  updateFacilityLabel();
+  renderFacilityOptions(document.getElementById('facility-search')?.value || '');
+}
+
+function toggleFacility(hoscode) {
+  if (selectedHoscodes.includes(hoscode)) {
+    selectedHoscodes = selectedHoscodes.filter(code => code !== hoscode);
+  } else {
+    selectedHoscodes.push(hoscode);
+  }
+  updateFacilityLabel();
+  renderFacilityOptions(document.getElementById('facility-search')?.value || '');
+}
+
+function updateFacilityLabel() {
+  const label = document.getElementById('facility-select-label');
+  const count = document.getElementById('facility-selected-count');
+  if (!label || !count) return;
+
+  if (!selectedHoscodes.length) {
+    label.textContent = 'ทั้งหมด';
+    count.textContent = `ทั้งหมด ${availableFacilities.length.toLocaleString()} หน่วยบริการ`;
+    return;
+  }
+
+  const selectedNames = availableFacilities
+    .filter(item => selectedHoscodes.includes(item.hoscode))
+    .slice(0, 2)
+    .map(item => `${item.hoscode} ${item.hosname || ''}`.trim());
+  label.textContent = selectedNames.join(', ') + (selectedHoscodes.length > 2 ? ` +${selectedHoscodes.length - 2}` : '');
+  count.textContent = `เลือก ${selectedHoscodes.length.toLocaleString()} หน่วยบริการ`;
+}
+
+function renderFacilityOptions(keyword = '') {
+  const container = document.getElementById('facility-options');
+  if (!container) return;
+
+  const term = keyword.toLowerCase().trim();
+  const rows = availableFacilities.filter(item => {
+    const text = `${item.hoscode} ${item.hosname || ''}`.toLowerCase();
+    return !term || text.includes(term);
+  });
+
+  const allActive = selectedHoscodes.length === 0;
+  let html = `
+    <button type="button" class="facility-option ${allActive ? 'active' : ''}" onclick="selectAllFacilities()">
+      <span class="facility-check">${allActive ? '✓' : ''}</span>
+      <span class="facility-name">ทั้งหมด</span>
+      <span class="facility-rows">${availableFacilities.reduce((sum, item) => sum + Number(item.rows || 0), 0).toLocaleString()} แถว</span>
+    </button>
+  `;
+
+  if (!rows.length) {
+    html += '<div class="facility-empty">ไม่พบหน่วยบริการ</div>';
+  } else {
+    html += rows.map(item => {
+      const active = selectedHoscodes.includes(item.hoscode);
+      return `
+        <button type="button" class="facility-option ${active ? 'active' : ''}" onclick="toggleFacility(${jsString(item.hoscode)})">
+          <span class="facility-check">${active ? '✓' : ''}</span>
+          <span class="facility-name">${escapeHtml(item.hoscode)} ${escapeHtml(item.hosname || '')}</span>
+          <span class="facility-rows">${Number(item.rows || 0).toLocaleString()} แถว</span>
+        </button>
+      `;
+    }).join('');
+  }
+
+  container.innerHTML = html;
+}
+
 /**
  * Transform data
  */
@@ -196,7 +307,10 @@ async function transformData() {
   try {
     const result = await api('/api/transform', {
       method: 'POST',
-      body: JSON.stringify({ file_id: currentFileId })
+      body: JSON.stringify({
+        file_id: currentFileId,
+        hoscodes: getSelectedHoscodesPayload()
+      })
     });
 
     hideLoading();
@@ -538,6 +652,8 @@ function resetUpload() {
   allData = [];
   filteredData = [];
   currentColumns = [];
+  availableFacilities = [];
+  selectedHoscodes = [];
   currentPage = 1;
   rowsPerPage = 20;
   sortCol = -1;
@@ -552,6 +668,8 @@ function resetUpload() {
   const previewSection = document.getElementById('preview-section');
   const resultsSection = document.getElementById('results-section');
   const fileInput = document.getElementById('file-input');
+  const facilitySection = document.getElementById('facility-filter-section');
+  const facilityDropdown = document.getElementById('facility-dropdown');
 
   zone.classList.remove('hidden');
   fileInfo.classList.add('hidden');
@@ -559,6 +677,8 @@ function resetUpload() {
   progressBar.style.width = '0%';
   previewSection.classList.add('hidden');
   resultsSection.classList.add('hidden');
+  if (facilitySection) facilitySection.classList.add('hidden');
+  if (facilityDropdown) facilityDropdown.classList.add('hidden');
 
   // Clear file input
   if (fileInput) fileInput.value = '';

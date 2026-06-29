@@ -302,7 +302,7 @@
         </button>
       </div>
       <div class="sidebar-footer">
-        <span class="version-text">v1.0.0</span>
+        <span class="version-text">v0.0.1</span>
       </div>
     </aside>
 
@@ -365,6 +365,25 @@
               <thead id="preview-thead"></thead>
               <tbody id="preview-tbody"></tbody>
             </table>
+          </div>
+          <div id="facility-filter-section" class="facility-filter glass-card hidden">
+            <div class="facility-filter-header">
+              <div>
+                <h3>เลือกหน่วยบริการ</h3>
+                <p class="text-secondary">เลือกจาก HOSCODE/HOSNAME ก่อนแปลงข้อมูล</p>
+              </div>
+              <span class="badge badge-info" id="facility-selected-count">ทั้งหมด</span>
+            </div>
+            <div class="facility-select" id="facility-select">
+              <button type="button" class="facility-select-trigger" onclick="toggleFacilityDropdown()">
+                <span id="facility-select-label">ทั้งหมด</span>
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+              </button>
+              <div class="facility-dropdown hidden" id="facility-dropdown">
+                <input type="text" class="facility-search" id="facility-search" placeholder="ค้นหา HOSCODE หรือ HOSNAME" oninput="renderFacilityOptions(this.value)">
+                <div class="facility-options" id="facility-options"></div>
+              </div>
+            </div>
           </div>
           <div class="transform-action">
             <button class="btn btn-primary btn-lg" onclick="transformData()" id="btn-transform">

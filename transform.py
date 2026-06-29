@@ -33,6 +33,36 @@ def _normalize_pid(value) -> str:
     return text
 
 
+def _normalize_column_name(value, index: int) -> str:
+    text = _cell_to_text(value) if value is not None else ""
+    return (text or f"COLUMN_{index + 1}").strip().upper()
+
+
+def _make_unique_columns(raw_columns: list) -> list:
+    columns = []
+    seen = {}
+    for index, cell in enumerate(raw_columns):
+        base_name = _normalize_column_name(cell, index)
+        count = seen.get(base_name, 0) + 1
+        seen[base_name] = count
+        columns.append(base_name if count == 1 else f"{base_name}_{count}")
+    return columns
+
+
+def _extract_facilities(data: list) -> list:
+    facilities = {}
+    for row in data:
+        hoscode = _cell_to_text(row.get("HOSCODE", ""))
+        if not hoscode:
+            continue
+        hosname = _cell_to_text(row.get("HOSNAME", ""))
+        item = facilities.setdefault(hoscode, {"hoscode": hoscode, "hosname": hosname, "rows": 0})
+        item["rows"] += 1
+        if hosname and not item.get("hosname"):
+            item["hosname"] = hosname
+    return sorted(facilities.values(), key=lambda item: (item["hoscode"], item["hosname"]))
+
+
 def _chunks(values: list, size: int = 800):
     for index in range(0, len(values), size):
         yield values[index:index + size]
@@ -65,7 +95,7 @@ def process_upload(file_path: str) -> dict:
         for row_idx, row in enumerate(ws.iter_rows(values_only=True)):
             if row_idx == 0:
                 # แถวแรกเป็น header
-                columns = [str(cell) if cell is not None else f"column_{i}" for i, cell in enumerate(row)]
+                columns = _make_unique_columns(list(row))
             else:
                 # แถวข้อมูล
                 row_dict = {}
@@ -85,14 +115,15 @@ def process_upload(file_path: str) -> dict:
         return {
             "columns": columns,
             "data": rows_data,
-            "preview": preview
+            "preview": preview,
+            "facilities": _extract_facilities(rows_data)
         }
 
     except Exception as e:
         raise Exception(f"เกิดข้อผิดพลาดในการอ่านไฟล์ Excel: {e}")
 
 
-def transform_data(file_id: str, data: list, columns: list) -> dict:
+def transform_data(file_id: str, data: list, columns: list, selected_hoscodes: list = None) -> dict:
     """
     แปลงข้อมูลโดยจับคู่ pid กับตาราง person
 
@@ -105,7 +136,11 @@ def transform_data(file_id: str, data: list, columns: list) -> dict:
         dict: {data, columns, matched_count, unmatched_count}
     """
     try:
-        person_columns = ["person_cid", "full_name"]
+        person_columns = ["PERSON_CID", "FULL_NAME"]
+        selected_hoscodes = [str(code).strip() for code in (selected_hoscodes or []) if str(code).strip()]
+        if selected_hoscodes:
+            selected_set = set(selected_hoscodes)
+            data = [row for row in data if _cell_to_text(row.get("HOSCODE", "")) in selected_set]
 
         # ค้นหาคอลัมน์ pid (ไม่สนใจตัวพิมพ์เล็ก/ใหญ่)
         pid_column = None
@@ -119,8 +154,8 @@ def transform_data(file_id: str, data: list, columns: list) -> dict:
             for row in data:
                 new_row = dict(row)
                 new_row.update({
-                    "person_cid": "",
-                    "full_name": "",
+                    "PERSON_CID": "",
+                    "FULL_NAME": "",
                     "_matched": False,
                 })
                 transformed_data.append(new_row)
@@ -148,8 +183,8 @@ def transform_data(file_id: str, data: list, columns: list) -> dict:
             for row in data:
                 new_row = dict(row)
                 new_row.update({
-                    "person_cid": "",
-                    "full_name": "",
+                    "PERSON_CID": "",
+                    "FULL_NAME": "",
                     "_matched": False,
                 })
                 transformed_data.append(new_row)
@@ -216,18 +251,18 @@ def transform_data(file_id: str, data: list, columns: list) -> dict:
                     lookup_keys.append(str(int(pid_str)))
                 person = next((person_map[key] for key in lookup_keys if key in person_map), None)
                 if person:
-                    new_row["person_cid"] = person["cid"]
-                    new_row["full_name"] = person["full_name"]
+                    new_row["PERSON_CID"] = person["cid"]
+                    new_row["FULL_NAME"] = person["full_name"]
                     new_row["_matched"] = True
                     matched_count += 1
                 else:
-                    new_row["person_cid"] = ""
-                    new_row["full_name"] = ""
+                    new_row["PERSON_CID"] = ""
+                    new_row["FULL_NAME"] = ""
                     new_row["_matched"] = False
                     unmatched_count += 1
             else:
-                new_row["person_cid"] = ""
-                new_row["full_name"] = ""
+                new_row["PERSON_CID"] = ""
+                new_row["FULL_NAME"] = ""
                 new_row["_matched"] = False
                 unmatched_count += 1
 

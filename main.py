@@ -33,7 +33,7 @@ from models import (
 from transform import process_upload, transform_data, export_excel
 
 # กำหนด path
-APP_VERSION = "1.0.0"
+APP_VERSION = "0.0.1"
 UPLOADS_DIR = os.path.join(APP_DIR, "uploads")
 UPDATE_DIR = os.path.join(APP_DIR, "updates")
 UPDATE_MANIFEST = os.path.join(UPDATE_DIR, "manifest.json")
@@ -559,6 +559,7 @@ async def upload_file(
             "original_filename": file.filename,
             "columns": result["columns"],
             "data": result["data"],
+            "facilities": result.get("facilities", []),
             "upload_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "total_rows": len(result["data"]),
             "status": "uploaded"
@@ -578,7 +579,8 @@ async def upload_file(
             "file_id": file_id,
             "preview": result["preview"],
             "columns": result["columns"],
-            "total_rows": len(result["data"])
+            "total_rows": len(result["data"]),
+            "facilities": result.get("facilities", [])
         }
 
     except Exception as e:
@@ -614,7 +616,7 @@ async def transform(
         columns = upload_info["columns"]
 
         # แปลงข้อมูล
-        result = transform_data(file_id, data, columns)
+        result = transform_data(file_id, data, columns, request.hoscodes)
 
         # ส่งออกเป็น Excel
         output_path = export_excel(
@@ -629,6 +631,7 @@ async def transform(
         upload_store[file_id]["status"] = "completed"
         upload_store[file_id]["matched_count"] = result["matched_count"]
         upload_store[file_id]["unmatched_count"] = result["unmatched_count"]
+        upload_store[file_id]["selected_hoscodes"] = request.hoscodes
 
         # อัพเดทประวัติ
         for item in history_store:

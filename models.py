@@ -37,6 +37,7 @@ class LoginResponse(BaseModel):
 class TransformRequest(BaseModel):
     """โมเดลสำหรับ request การแปลงข้อมูล"""
     file_id: str
+    hoscodes: List[str] = Field(default_factory=list)
 
 
 class UploadResponse(BaseModel):
@@ -45,6 +46,7 @@ class UploadResponse(BaseModel):
     preview: List[Dict[str, Any]]
     columns: List[str]
     total_rows: int
+    facilities: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 class TransformResponse(BaseModel):
