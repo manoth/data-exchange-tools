@@ -12,8 +12,9 @@ import sys
 import json
 import subprocess
 import hashlib
-import urllib.request
 import urllib.parse
+import urllib.request
+import urllib.error
 import time
 import zipfile
 from datetime import datetime
@@ -34,7 +35,7 @@ from models import (
 from transform import process_upload, transform_data, export_excel
 
 # กำหนด path
-APP_VERSION = "0.0.5"
+APP_VERSION = "0.0.6"
 UPLOADS_DIR = os.path.join(APP_DIR, "uploads")
 UPDATE_DIR = os.path.join(APP_DIR, "updates")
 UPDATE_MANIFEST = os.path.join(UPDATE_DIR, "manifest.json")
@@ -56,7 +57,7 @@ app = FastAPI(title="Data Exchange Tools")
 upload_store = {}
 # เก็บประวัติการใช้งาน
 history_store = []
-update_cache = {"checked_at": None, "status": None}
+update_cache = {"checked_at": None, "status": None, "last_error": ""}
 
 # ────────────────────────────────────────────
 # Startup Event
@@ -199,6 +200,7 @@ def _load_update_manifest() -> dict:
 
 def _load_online_update_manifest(force: bool = False) -> dict:
     if not UPDATE_MANIFEST_URL:
+        update_cache["last_error"] = "ไม่ได้กำหนด UPDATE_MANIFEST_URL"
         return {}
 
     try:
@@ -211,11 +213,26 @@ def _load_online_update_manifest(force: bool = False) -> dict:
         )
         with urllib.request.urlopen(request, timeout=8) as response:
             if response.status >= 400:
+                update_cache["last_error"] = f"HTTP {response.status} จาก online manifest"
                 return {}
             payload = response.read(512 * 1024)
         data = json.loads(payload.decode("utf-8"))
-        return data if isinstance(data, dict) else {}
-    except Exception:
+        if not isinstance(data, dict):
+            update_cache["last_error"] = "รูปแบบ latest.json ไม่ใช่ JSON object"
+            return {}
+        update_cache["last_error"] = ""
+        return data
+    except urllib.error.HTTPError as e:
+        update_cache["last_error"] = f"HTTP {e.code}: {e.reason}"
+        return {}
+    except urllib.error.URLError as e:
+        update_cache["last_error"] = f"เชื่อมต่อ URL ไม่ได้: {e.reason}"
+        return {}
+    except json.JSONDecodeError as e:
+        update_cache["last_error"] = f"อ่าน latest.json ไม่ได้: {e}"
+        return {}
+    except Exception as e:
+        update_cache["last_error"] = str(e)[:300]
         return {}
 
 
@@ -362,7 +379,12 @@ def _get_update_status(force: bool = False) -> dict:
         status = _build_update_status(online_manifest, "online")
     else:
         local_manifest = _load_update_manifest()
-        status = _build_update_status(local_manifest, "local", "เช็ก online ไม่สำเร็จ ใช้ local manifest แทน")
+        reason = update_cache.get("last_error") or "ไม่ทราบสาเหตุ"
+        status = _build_update_status(
+            local_manifest,
+            "local",
+            f"เช็ก online ไม่สำเร็จ ({reason}) ใช้ local manifest แทน",
+        )
 
     update_cache["checked_at"] = now
     update_cache["status"] = status

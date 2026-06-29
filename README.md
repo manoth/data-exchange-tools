@@ -73,6 +73,8 @@ Login ด้วย local admin แล้วกดปุ่ม “ปิด servi
 
 ระบบจะตรวจ update จาก online manifest ทุก 10 นาทีเมื่อ admin ใช้งานอยู่ และยัง fallback ไปใช้ไฟล์ในโฟลเดอร์ `updates/` ได้ถ้าเช็ก online ไม่สำเร็จ
 
+ถ้าหน้าเว็บขึ้นข้อความประมาณ `เช็ก online ไม่สำเร็จ ... ใช้ local manifest แทน` แปลว่าเครื่องที่รัน `.exe` โหลดไฟล์ `latest.json` จาก internet หรือ server กลางไม่ได้ ไม่ใช่ปัญหาที่ปุ่ม Update โดยตรง ให้ตรวจว่า URL เปิดได้จากเครื่อง Windows เครื่องนั้นโดยไม่ต้อง login
+
 ค่าเริ่มต้นของ online manifest คือ
 
 ```text
@@ -121,6 +123,36 @@ images/logo.png
 ```
 
 หรือจะ zip โดยมี root เป็น `static/` ก็ได้ เช่น `static/index.html`, `static/js/app.js`
+
+สร้างไฟล์ frontend update อัตโนมัติ:
+
+```bash
+python make_frontend_update.py --version 0.0.6 --base-url https://your-domain.example/data-exchange-tools --notes "ปรับปรุงหน้าเว็บ"
+```
+
+จะได้ไฟล์ในโฟลเดอร์ `release/`:
+
+```text
+release/frontend-0.0.6.zip
+release/latest.json
+```
+
+ให้อัปโหลดทั้งสองไฟล์ไปไว้ที่ URL เดียวกับ `--base-url` เช่น:
+
+```text
+https://your-domain.example/data-exchange-tools/frontend-0.0.6.zip
+https://your-domain.example/data-exchange-tools/latest.json
+```
+
+จากเครื่อง Windows ที่รัน `.exe` ต้องเปิด URL `latest.json` ใน browser ได้โดยไม่ต้อง login ถ้าเปิดไม่ได้ ระบบในหน้าเว็บก็จะขึ้นว่าเช็ก online ไม่สำเร็จ
+
+ถ้าใช้ GitHub Release ตามค่าเริ่มต้น ให้สร้าง Release แล้วแนบ asset ชื่อ `latest.json` และ `frontend-0.0.6.zip` โดย URL ค่าเริ่มต้นจะเรียกไฟล์นี้:
+
+```text
+https://github.com/manoth/data-exchange-tools/releases/latest/download/latest.json
+```
+
+กรณี repository หรือ release asset เป็น private เครื่อง client จะโหลดผ่าน URL นี้ไม่ได้ถ้าไม่มี token แนะนำให้ใช้ web server ภายใน, object storage, หรือ GitHub Release/public asset ที่เครื่องลูกเข้าถึงได้
 
 ข้อกำหนดด้านความปลอดภัย:
 

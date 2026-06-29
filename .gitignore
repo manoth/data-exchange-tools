@@ -6,6 +6,7 @@ venv/
 .playwright-cli/
 build/
 dist/
+release/
 *.spec
 *.xlsx
 opduser.sql
