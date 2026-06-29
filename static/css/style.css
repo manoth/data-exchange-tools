@@ -981,11 +981,15 @@ select option {
 
 .preview-table-container {
   max-height: min(38vh, 360px);
+  position: relative;
+  z-index: 1;
 }
 
 .facility-filter {
   margin-top: 18px;
   padding: 20px;
+  position: relative;
+  z-index: 200;
 }
 
 .facility-filter-header {
@@ -1004,6 +1008,7 @@ select option {
 .facility-select {
   position: relative;
   width: min(100%, 760px);
+  z-index: 210;
 }
 
 .facility-select-trigger {
@@ -1035,7 +1040,7 @@ select option {
   top: calc(100% + 8px);
   left: 0;
   right: 0;
-  z-index: 50;
+  z-index: 9999;
   max-height: 340px;
   overflow: hidden;
   background: rgba(11, 35, 43, 0.98);
