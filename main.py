@@ -14,6 +14,7 @@ import subprocess
 import hashlib
 import urllib.request
 import urllib.parse
+import time
 from datetime import datetime
 
 from fastapi import FastAPI, File, UploadFile, Request, HTTPException, Depends
@@ -33,7 +34,7 @@ from models import (
 from transform import process_upload, transform_data, export_excel
 
 # กำหนด path
-APP_VERSION = "0.0.2"
+APP_VERSION = "0.0.3"
 UPLOADS_DIR = os.path.join(APP_DIR, "uploads")
 UPDATE_DIR = os.path.join(APP_DIR, "updates")
 UPDATE_MANIFEST = os.path.join(UPDATE_DIR, "manifest.json")
@@ -184,6 +185,17 @@ def _get_manifest_script_url(manifest: dict) -> str:
     return str(manifest.get("linux_script_url") or manifest.get("script_url") or "")
 
 
+def _get_manifest_exe_url(manifest: dict) -> str:
+    if os.name != "nt":
+        return ""
+    return str(
+        manifest.get("windows_exe_url")
+        or manifest.get("exe_url")
+        or manifest.get("package_url")
+        or ""
+    )
+
+
 def _get_manifest_sha256(manifest: dict) -> str:
     if os.name == "nt":
         return str(
@@ -196,6 +208,17 @@ def _get_manifest_sha256(manifest: dict) -> str:
         manifest.get("linux_sha256")
         or manifest.get("script_sha256")
         or manifest.get("sha256")
+        or ""
+    ).lower()
+
+
+def _get_manifest_exe_sha256(manifest: dict) -> str:
+    if os.name != "nt":
+        return ""
+    return str(
+        manifest.get("windows_exe_sha256")
+        or manifest.get("exe_sha256")
+        or manifest.get("package_sha256")
         or ""
     ).lower()
 
@@ -221,11 +244,13 @@ def _build_update_status(manifest: dict, source: str, online_error: str = "") ->
     script_path = _get_update_script_path(manifest) if manifest else ""
     script_exists = bool(script_path and os.path.exists(script_path))
     script_url = _get_manifest_script_url(manifest) if manifest else ""
+    exe_url = _get_manifest_exe_url(manifest) if manifest else ""
     online_script_ready = bool(script_url and _is_safe_update_url(script_url) and _get_manifest_sha256(manifest))
+    online_exe_ready = bool(exe_url and _is_safe_update_url(exe_url) and _get_manifest_exe_sha256(manifest))
     update_available = (
         bool(manifest)
         and _version_parts(latest_version) > _version_parts(APP_VERSION)
-        and (script_exists or online_script_ready)
+        and (script_exists or online_script_ready or online_exe_ready)
     )
     if update_available:
         message = "พร้อมอัปเดตออนไลน์" if source == "online" else "พร้อมอัปเดต"
@@ -240,6 +265,7 @@ def _build_update_status(manifest: dict, source: str, online_error: str = "") ->
         "update_available": update_available,
         "script_exists": script_exists,
         "online_script": bool(script_url),
+        "online_exe": bool(exe_url),
         "source": source,
         "notes": str(manifest.get("notes") or ""),
         "message": message,
@@ -284,30 +310,102 @@ def _get_active_update_manifest() -> dict:
     return manifest if isinstance(manifest, dict) else {}
 
 
+def _download_url_to_file(url: str, expected_sha256: str, output_path: str, max_bytes: int) -> str:
+    if not _is_safe_update_url(url):
+        raise ValueError("update URL ต้องเป็น https เท่านั้น")
+    if not expected_sha256:
+        raise ValueError("online update ต้องระบุ sha256 เพื่อยืนยันไฟล์")
+
+    request = urllib.request.Request(url, headers={"User-Agent": f"DataExchangeTools/{APP_VERSION}"})
+    sha256 = hashlib.sha256()
+    total = 0
+    with urllib.request.urlopen(request, timeout=60) as response, open(output_path, "wb") as f:
+        while True:
+            chunk = response.read(1024 * 1024)
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > max_bytes:
+                raise ValueError("ไฟล์ update มีขนาดใหญ่เกินกำหนด")
+            sha256.update(chunk)
+            f.write(chunk)
+
+    actual_sha256 = sha256.hexdigest().lower()
+    if actual_sha256 != expected_sha256:
+        try:
+            os.remove(output_path)
+        except OSError:
+            pass
+        raise ValueError("sha256 ของไฟล์ update ไม่ตรงกับ manifest")
+    return output_path
+
+
 def _download_update_script(manifest: dict) -> str:
     script_url = _get_manifest_script_url(manifest)
     expected_sha256 = _get_manifest_sha256(manifest)
     if not script_url:
         return _get_update_script_path(manifest)
-    if not _is_safe_update_url(script_url):
-        raise ValueError("update URL ต้องเป็น https เท่านั้น")
-    if not expected_sha256:
-        raise ValueError("online update ต้องระบุ sha256 เพื่อยืนยันไฟล์")
 
     os.makedirs(UPDATE_DIR, exist_ok=True)
     script_name = _script_name_for_platform()
     downloaded_path = os.path.abspath(os.path.join(UPDATE_DIR, f"downloaded_{script_name}"))
-    request = urllib.request.Request(script_url, headers={"User-Agent": f"DataExchangeTools/{APP_VERSION}"})
-    with urllib.request.urlopen(request, timeout=30) as response:
-        payload = response.read(10 * 1024 * 1024)
-    actual_sha256 = hashlib.sha256(payload).hexdigest().lower()
-    if actual_sha256 != expected_sha256:
-        raise ValueError("sha256 ของ update script ไม่ตรงกับ manifest")
-    with open(downloaded_path, "wb") as f:
-        f.write(payload)
+    _download_url_to_file(script_url, expected_sha256, downloaded_path, 20 * 1024 * 1024)
     if os.name != "nt":
         os.chmod(downloaded_path, 0o700)
     return downloaded_path
+
+
+def _download_update_exe(manifest: dict) -> str:
+    exe_url = _get_manifest_exe_url(manifest)
+    expected_sha256 = _get_manifest_exe_sha256(manifest)
+    if not exe_url:
+        return ""
+
+    os.makedirs(UPDATE_DIR, exist_ok=True)
+    exe_path = os.path.abspath(os.path.join(UPDATE_DIR, "DataExchangeTools.new.exe"))
+    return _download_url_to_file(exe_url, expected_sha256, exe_path, 500 * 1024 * 1024)
+
+
+def _write_windows_self_updater(new_exe_path: str) -> str:
+    if os.name != "nt" or not getattr(sys, "frozen", False):
+        raise ValueError("self-update exe ใช้ได้เฉพาะ Windows build แบบ .exe")
+
+    current_exe = os.path.abspath(sys.executable)
+    updater_path = os.path.abspath(os.path.join(UPDATE_DIR, "apply_update.bat"))
+    log_path = os.path.abspath(os.path.join(UPDATE_DIR, "update.log"))
+    bat = f"""@echo off
+setlocal
+set "NEW_EXE={new_exe_path}"
+set "TARGET_EXE={current_exe}"
+set "LOG_FILE={log_path}"
+echo [%DATE% %TIME%] applying exe update >> "%LOG_FILE%"
+timeout /t 3 /nobreak >nul
+copy /Y "%NEW_EXE%" "%TARGET_EXE%" >> "%LOG_FILE%" 2>&1
+if errorlevel 1 (
+  echo [%DATE% %TIME%] first copy failed, retrying >> "%LOG_FILE%"
+  timeout /t 4 /nobreak >nul
+  copy /Y "%NEW_EXE%" "%TARGET_EXE%" >> "%LOG_FILE%" 2>&1
+)
+if errorlevel 1 (
+  echo [%DATE% %TIME%] update failed >> "%LOG_FILE%"
+  exit /b 1
+)
+echo [%DATE% %TIME%] update complete, restarting >> "%LOG_FILE%"
+start "" "%TARGET_EXE%"
+exit /b 0
+"""
+    with open(updater_path, "w", encoding="utf-8") as f:
+        f.write(bat)
+    return updater_path
+
+
+def _schedule_process_exit(delay_seconds: float = 1.0):
+    def stop_process():
+        time.sleep(delay_seconds)
+        os._exit(0)
+
+    timer = threading.Thread(target=stop_process, daemon=True)
+    timer.start()
 
 
 # ────────────────────────────────────────────
@@ -472,13 +570,36 @@ async def version_status(force: bool = False, current_admin: dict = Depends(get_
 
 @app.post("/api/admin/update")
 async def admin_update(current_admin: dict = Depends(get_current_admin)):
-    """ดาวน์โหลด/รัน update script หลังตรวจ manifest และ hash"""
+    """ดาวน์โหลดและใช้ update จาก online manifest หรือ local script"""
     try:
         status = _get_update_status(force=True)
         if not status.get("update_available"):
             return JSONResponse(status_code=400, content=status)
 
         manifest = _get_active_update_manifest()
+        exe_url = _get_manifest_exe_url(manifest)
+        if exe_url:
+            new_exe_path = _download_update_exe(manifest)
+            updater_path = _write_windows_self_updater(new_exe_path)
+            log_path = os.path.join(UPDATE_DIR, "update.log")
+            log_file = open(log_path, "a", encoding="utf-8")
+            log_file.write(f"\n[{datetime.now():%Y-%m-%d %H:%M:%S}] start self-update {status['latest_version']}\n")
+            log_file.flush()
+            subprocess.Popen(
+                ["cmd", "/c", updater_path],
+                cwd=UPDATE_DIR,
+                stdout=log_file,
+                stderr=subprocess.STDOUT,
+                creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
+            )
+            _schedule_process_exit(1.0)
+            return {
+                "success": True,
+                "message": "ดาวน์โหลด update แล้ว ระบบจะปิด service และเปิดโปรแกรมเวอร์ชันใหม่ให้อัตโนมัติ",
+                "current_version": APP_VERSION,
+                "latest_version": status["latest_version"],
+            }
+
         script_path = _download_update_script(manifest)
         if not script_path or not os.path.exists(script_path):
             return JSONResponse(
