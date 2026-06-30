@@ -54,6 +54,7 @@ async function api(endpoint, options = {}) {
     if (response.status === 401) {
       removeToken();
       removeUserData();
+      rememberRouteForAfterLogin();
       showPage('login');
       showToast('เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่', 'warning');
       return null;

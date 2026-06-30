@@ -102,9 +102,10 @@ def build():
             print(f"   📦 ขนาด: {size_mb:.1f} MB")
             print(f"\n💡 วิธีใช้งาน:")
             print(f"   1. ดับเบิลคลิกไฟล์ DataExchangeTools.exe")
-            print(f"   2. Browser จะเปิดอัตโนมัติที่ http://localhost:8899")
-            print(f"   3. ตั้งค่าการเชื่อมต่อฐานข้อมูล HosXP")
-            print(f"   4. Login ด้วย username/password จาก HosXP")
+            print(f"   2. Browser จะเปิดอัตโนมัติที่ http://localhost:8899 เฉพาะตอนดับเบิลคลิก")
+            print(f"   3. ระบบจะสร้าง Windows Startup task ให้รัน service ตอนเปิดเครื่องแบบไม่เปิด browser")
+            print(f"   4. ระบบจะสร้าง shortcut ที่ Desktop สำหรับเปิดหน้าเว็บเมื่ออยากใช้งาน")
+            print(f"   5. ตั้งค่าการเชื่อมต่อฐานข้อมูล HosXP แล้ว Login ด้วย username/password จาก HosXP")
         else:
             print("❌ ไม่พบไฟล์ .exe หลัง build")
 

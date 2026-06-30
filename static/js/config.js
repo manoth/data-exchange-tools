@@ -247,8 +247,7 @@ async function saveConfig() {
         </div>
       `;
       setTimeout(() => {
-        showPage('dashboard');
-        showSection('upload');
+        navigateToRoute('/upload', true);
         if (typeof startUpdateAutoCheck === 'function') startUpdateAutoCheck();
         showToast('ตั้งค่าฐานข้อมูลสำเร็จ', 'success');
       }, 900);
@@ -357,6 +356,10 @@ async function checkVersionUpdate(force = true, silent = false) {
 
   const notes = result.notes ? ` (${escapeHtml(result.notes)})` : '';
   const source = result.source === 'online' ? 'online' : 'local';
+  const startupUpdate = result.startup_auto_update || {};
+  const startupMessage = startupUpdate.message
+    ? `<div class="status-subtext">Auto update ตอนเริ่ม service: ${escapeHtml(startupUpdate.message)}</div>`
+    : '';
   if (result.update_available) {
     if (statusDiv) {
       statusDiv.className = 'connection-status success';
@@ -365,6 +368,7 @@ async function checkVersionUpdate(force = true, silent = false) {
           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
           <span>มี update ${source}: v${escapeHtml(result.latest_version)} | ปัจจุบัน v${escapeHtml(result.current_version)}${notes}</span>
         </div>
+        ${startupMessage}
       `;
     }
     if (updateBtn) updateBtn.classList.remove('hidden');
@@ -376,6 +380,7 @@ async function checkVersionUpdate(force = true, silent = false) {
         <div class="status-content">
           <span>เวอร์ชันปัจจุบัน v${escapeHtml(result.current_version)} | ${escapeHtml(result.message || 'ยังไม่มี update')}</span>
         </div>
+        ${startupMessage}
       `;
     }
   }

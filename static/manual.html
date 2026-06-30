@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>คู่มือการใช้งาน Data Exchange Tools</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Tahoma, sans-serif;
+      background: #EEF4FA;
+      padding: 36px 18px;
+    }
+    main {
+      width: min(1160px, 100%);
+      margin: 0 auto;
+    }
+    
+    .manual-document {
+      --manual-blue: #1F4D78;
+      --manual-line: #C8D8EA;
+      --manual-muted: #64748B;
+      --manual-soft: #F5F8FC;
+      color: #1E293B;
+      background: #FFFFFF;
+      border: 1px solid var(--manual-line);
+      border-radius: 8px;
+      box-shadow: 0 18px 45px rgba(0, 0, 0, .18);
+      line-height: 1.78;
+      overflow: hidden;
+    }
+    .manual-document .manual-inner {
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: 42px 48px 64px;
+      background: #FFFFFF;
+    }
+    .manual-document h1 {
+      margin: 0 0 10px;
+      color: var(--manual-blue);
+      font-size: 2.35rem;
+      line-height: 1.2;
+    }
+    .manual-document h2 {
+      color: var(--manual-blue);
+      font-size: 1.65rem;
+      margin: 42px 0 16px;
+      padding-bottom: 8px;
+      border-bottom: 2px solid #E8F0FA;
+    }
+    .manual-document h3 {
+      color: #2E74B5;
+      font-size: 1.15rem;
+      margin: 22px 0 10px;
+    }
+    .manual-document p { margin: 8px 0; }
+    .manual-document ol, .manual-document ul { padding-left: 24px; }
+    .manual-document li { margin: 7px 0; }
+    .manual-document code {
+      color: #1F4D78;
+      background: #EAF2FB;
+      padding: 2px 6px;
+      border-radius: 5px;
+    }
+    .manual-document .manual-eyebrow {
+      margin: 0 0 8px;
+      color: #2E74B5;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0;
+    }
+    .manual-document .manual-lead { color: var(--manual-muted); font-size: 1.02rem; }
+    .manual-document .manual-hero {
+      padding: 30px 32px;
+      background: linear-gradient(180deg, #F8FBFF, #FFFFFF);
+      border: 1px solid var(--manual-line);
+      border-radius: 8px;
+    }
+    .manual-document .manual-note {
+      margin: 18px 0 0;
+      padding: 16px 18px;
+      border-radius: 8px;
+      border: 1px solid #E6C75F;
+      background: #FFF8E1;
+      color: #4A3B00;
+    }
+    .manual-document .manual-note.success {
+      border-color: #B7E4C7;
+      background: #EFFAF3;
+      color: #0F5132;
+    }
+    .manual-document .manual-card {
+      border: 1px solid var(--manual-line);
+      background: var(--manual-soft);
+      border-radius: 8px;
+      padding: 18px 20px;
+      margin: 14px 0;
+    }
+    .manual-document .manual-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+      margin: 16px 0;
+    }
+    .manual-document .manual-step-title {
+      color: var(--manual-blue);
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+    .manual-document .shot {
+      margin: 22px 0 30px;
+      border: 1px solid var(--manual-line);
+      background: #FFFFFF;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .manual-document .shot img {
+      display: block;
+      width: 100%;
+      height: auto;
+      border-bottom: 1px solid var(--manual-line);
+    }
+    .manual-document .shot figcaption {
+      padding: 10px 16px;
+      color: var(--manual-muted);
+      background: #F8FBFF;
+      font-size: .92rem;
+    }
+    .manual-document .manual-footer {
+      margin-top: 44px;
+      padding-top: 18px;
+      border-top: 1px solid var(--manual-line);
+      color: var(--manual-muted);
+      font-size: .92rem;
+    }
+    @media (max-width: 900px) {
+      .manual-document .manual-inner { padding: 24px 18px 42px; }
+      .manual-document .manual-grid { grid-template-columns: 1fr; }
+      .manual-document h1 { font-size: 1.8rem; }
+    }
+
+  </style>
+</head>
+<body>
+  <main>
+<article class="manual-document">
+  <div class="manual-inner">
+
+      <section class="manual-hero" id="overview">
+        <p class="manual-eyebrow">Data Exchange Tools</p>
+        <h1>คู่มือการทำงานและวิธีใช้งานระบบ</h1>
+        <p class="manual-lead">คู่มือนี้จัดทำเป็นหน้าเว็บภายในระบบ เพื่อให้ผู้ใช้งานเปิดอ่านจากหน้า Login หรือเมนู “คู่มือการใช้งาน” ได้ทันที</p>
+        <div class="manual-note warning">
+          <strong>ข้อควรระวังด้านความปลอดภัย:</strong> คู่มือนี้ไม่แสดงรหัสผ่านจริง ไม่ควรส่งต่อรหัสผ่าน admin หรือรหัสผ่านฐานข้อมูลผ่านเอกสาร/ภาพหน้าจอ ให้ส่งแยกเฉพาะผู้มีสิทธิ์เท่านั้น
+        </div>
+      </section>
+
+      
+    <figure class="shot">
+      <img src="/manual/assets/00-workflow.png" alt="Flow การทำงานโดยรวมของระบบ">
+      <figcaption>Flow การทำงานโดยรวมของระบบ</figcaption>
+    </figure>
+    
+
+      <section class="manual-section" id="install">
+        <h2>ติดตั้งและเปิดใช้งานบน Windows</h2>
+        
+    <figure class="shot">
+      <img src="/manual/assets/09-install-windows.png" alt="ขั้นตอนติดตั้งและเปิดใช้งานบน Windows">
+      <figcaption>ขั้นตอนติดตั้งและเปิดใช้งานบน Windows</figcaption>
+    </figure>
+    
+        <ol>
+          <li>นำโฟลเดอร์โปรแกรมที่ build แล้วไปไว้ในเครื่อง client ของหน่วยบริการ</li>
+          <li>ดับเบิลคลิก <code>DataExchangeTools.exe</code> เพื่อเปิด service เว็บ ระบบจะเช็ก update ล่าสุดจาก GitHub Release อัตโนมัติ</li>
+          <li>ระบบจะสร้าง Windows Scheduled Task สำหรับเปิด service อัตโนมัติเมื่อ login Windows โดยไม่เปิด browser ขึ้นมาเอง</li>
+          <li>ระบบจะสร้าง shortcut บน Desktop สำหรับเปิด <code>http://localhost:8899</code> เมื่อต้องการเข้าใช้งาน</li>
+          <li>ถ้าเปิดไม่ได้ให้ตรวจสอบว่า port <code>8899</code> ว่าง และ antivirus/firewall ไม่บล็อกโปรแกรม</li>
+        </ol>
+      </section>
+
+      <section class="manual-section" id="first-admin">
+        <h2>เข้าใช้งานครั้งแรกและส่วนของ Admin</h2>
+        
+    <figure class="shot">
+      <img src="/manual/assets/01-login.png" alt="หน้า Login ของระบบ">
+      <figcaption>หน้า Login ของระบบ</figcaption>
+    </figure>
+    
+        <h3>ลำดับบังคับสำหรับการเปิดใช้งานครั้งแรก</h3>
+        <ol>
+          <li>เข้าสู่ระบบด้วยบัญชีผู้ดูแลระบบเริ่มต้น <code>admin</code> และรหัสผ่านเริ่มต้น <code>admin</code></li>
+          <li>ระบบจะพาไปหน้าเปลี่ยนรหัสผ่านผู้ดูแลระบบทันที ผู้ดูแลระบบต้องตั้งรหัสผ่านใหม่ก่อนใช้งานต่อ</li>
+          <li>รหัสผ่านใหม่ต้องไม่ซ้ำกับรหัสผ่านเดิม มีอย่างน้อย 8 ตัวอักษร และมีตัวพิมพ์เล็ก ตัวพิมพ์ใหญ่ ตัวเลข และอักขระพิเศษ</li>
+          <li>เมื่อเปลี่ยนรหัสผ่านสำเร็จ ระบบจะบังคับให้ตั้งค่าการเชื่อมต่อฐานข้อมูล HIS/HosXP ของหน่วยบริการ</li>
+          <li>ต้องกด “ทดสอบการเชื่อมต่อ” ให้สำเร็จก่อน จึงจะบันทึกการตั้งค่าและเริ่มใช้งานระบบได้</li>
+        </ol>
+        
+    <figure class="shot">
+      <img src="/manual/assets/02-admin-change-password.png" alt="หลัง Login ครั้งแรก ระบบบังคับให้เปลี่ยนรหัสผ่าน admin">
+      <figcaption>หลัง Login ครั้งแรก ระบบบังคับให้เปลี่ยนรหัสผ่าน admin</figcaption>
+    </figure>
+    
+        
+    <figure class="shot">
+      <img src="/manual/assets/03-first-db-config.png" alt="หลังเปลี่ยนรหัสผ่าน ระบบบังคับให้ตั้งค่าการเชื่อมต่อฐานข้อมูล HIS/HosXP">
+      <figcaption>หลังเปลี่ยนรหัสผ่าน ระบบบังคับให้ตั้งค่าการเชื่อมต่อฐานข้อมูล HIS/HosXP</figcaption>
+    </figure>
+    
+        <h3>การตั้งค่าฐานข้อมูลครั้งแรก</h3>
+        <p>เมื่อมาถึงหน้าตั้งค่าฐานข้อมูล ให้กรอก Host, Port, Database, Username และ Password ของฐานข้อมูล HIS/HosXP ของหน่วยบริการ จากนั้นต้องกด “ทดสอบการเชื่อมต่อ” ก่อนบันทึกทุกครั้ง</p>
+        
+    <figure class="shot">
+      <img src="/manual/assets/03-first-db-config-filled.png" alt="กรอกข้อมูลเชื่อมต่อฐานข้อมูล โดยช่อง Password แสดงแบบปิดรหัส">
+      <figcaption>กรอกข้อมูลเชื่อมต่อฐานข้อมูล โดยช่อง Password แสดงแบบปิดรหัส</figcaption>
+    </figure>
+    
+        
+    <figure class="shot">
+      <img src="/manual/assets/03-first-db-config-test-failed.png" alt="ตัวอย่างกรณีทดสอบการเชื่อมต่อไม่สำเร็จ ระบบแสดง popup แจ้งเตือนชัดเจน">
+      <figcaption>ตัวอย่างกรณีทดสอบการเชื่อมต่อไม่สำเร็จ ระบบแสดง popup แจ้งเตือนชัดเจน</figcaption>
+    </figure>
+    
+        
+    <figure class="shot">
+      <img src="/manual/assets/03-first-db-config-test-success.png" alt="ตัวอย่างกรณีทดสอบการเชื่อมต่อสำเร็จ ระบบแจ้งว่าสามารถบันทึกการตั้งค่าได้">
+      <figcaption>ตัวอย่างกรณีทดสอบการเชื่อมต่อสำเร็จ ระบบแจ้งว่าสามารถบันทึกการตั้งค่าได้</figcaption>
+    </figure>
+    
+        
+    <figure class="shot">
+      <img src="/manual/assets/03-first-db-config-saved-upload.png" alt="เมื่อบันทึกการตั้งค่าสำเร็จ ระบบจะพาไปหน้าอัปโหลดไฟล์ Exchange">
+      <figcaption>เมื่อบันทึกการตั้งค่าสำเร็จ ระบบจะพาไปหน้าอัปโหลดไฟล์ Exchange</figcaption>
+    </figure>
+    
+        <div class="manual-grid">
+          <div class="manual-card">
+            <div class="manual-step-title">บัญชี admin ใช้ทำอะไร</div>
+            <p>admin ใช้สำหรับตั้งค่าฐานข้อมูล ตรวจ update ปิด service และจัดการส่วนที่ผู้ใช้ทั่วไปไม่ควรเข้าถึง</p>
+          </div>
+          <div class="manual-card">
+            <div class="manual-step-title">หลังตั้งค่าครั้งแรก</div>
+            <p>เมื่อฐานข้อมูลเชื่อมต่อสำเร็จ ผู้ใช้ทั่วไปจะ Login ด้วยบัญชีจากตาราง <code>opduser</code> ของ HosXP ได้</p>
+          </div>
+        </div>
+        
+    <figure class="shot">
+      <img src="/manual/assets/07-config.png" alt="หน้าตั้งค่าการเชื่อมต่อฐานข้อมูลสำหรับ admin">
+      <figcaption>หน้าตั้งค่าการเชื่อมต่อฐานข้อมูลสำหรับ admin</figcaption>
+    </figure>
+    
+        <div class="manual-note success">
+          ถ้ายังไม่ทดสอบการเชื่อมต่อ หรือทดสอบไม่สำเร็จ ระบบจะไม่ให้บันทึกการตั้งค่า เพื่อป้องกันการใช้งานด้วย config ที่ผิด และถ้ามีการแก้ไขค่าใดหลังทดสอบผ่าน ต้องทดสอบใหม่ก่อนบันทึกอีกครั้ง
+        </div>
+      </section>
+
+      <section class="manual-section" id="normal-use">
+        <h2>การใช้งานโปรแกรมแบบปกติ</h2>
+        
+    <figure class="shot">
+      <img src="/manual/assets/02-upload-empty.png" alt="หน้าอัปโหลดไฟล์ Exchange">
+      <figcaption>หน้าอัปโหลดไฟล์ Exchange</figcaption>
+    </figure>
+    
+        <h3>ขั้นตอนอัปโหลดและแปลงข้อมูล</h3>
+        <ol>
+          <li>เข้าเมนู “อัปโหลด & แปลงข้อมูล”</li>
+          <li>เลือกไฟล์ Exchange นามสกุล <code>.xlsx</code> ที่ดาวน์โหลดจาก HDC</li>
+          <li>ตรวจสอบตัวอย่างข้อมูล 5 แถวแรก</li>
+          <li>เลือกหน่วยบริการจาก HOSCODE/HOSNAME หรือเลือก “ทั้งหมด”</li>
+          <li>กด “แปลงข้อมูล” ระบบจะนำ PID และ HOSCODE ไปตรวจร่วมกับฐานข้อมูล HIS</li>
+          <li>ตรวจผลลัพธ์ในตาราง กรอง/ค้นหาได้ และกด “ส่งออก Excel” เมื่อต้องการไฟล์ผลลัพธ์</li>
+        </ol>
+        
+    <figure class="shot">
+      <img src="/manual/assets/04-results-detail.png" alt="หน้าตารางผลลัพธ์หลังแปลงข้อมูล สามารถค้นหา กรอง และส่งออก Excel ได้">
+      <figcaption>หน้าตารางผลลัพธ์หลังแปลงข้อมูล สามารถค้นหา กรอง และส่งออก Excel ได้</figcaption>
+    </figure>
+    
+      </section>
+
+      <section class="manual-section" id="history">
+        <h2>ประวัติการแปลงและการกลับมาดูรายละเอียด</h2>
+        
+    <figure class="shot">
+      <img src="/manual/assets/05-history.png" alt="หน้าประวัติการแปลงข้อมูล">
+      <figcaption>หน้าประวัติการแปลงข้อมูล</figcaption>
+    </figure>
+    
+        <p>เมนูประวัติช่วยให้กลับมาดาวน์โหลดไฟล์ที่เคยแปลงสำเร็จ หรือกด “ดูรายละเอียด” เพื่อเปิดตารางผลลัพธ์เดิมกลับมาค้นหา/กรองซ้ำได้</p>
+      </section>
+
+      <section class="manual-section" id="update">
+        <h2>Update โปรแกรม</h2>
+        
+    <figure class="shot">
+      <img src="/manual/assets/06-settings-update.png" alt="หน้า Settings สำหรับตรวจสอบและกด Update">
+      <figcaption>หน้า Settings สำหรับตรวจสอบและกด Update</figcaption>
+    </figure>
+    
+        
+    <figure class="shot">
+      <img src="/manual/assets/08-update-flow.png" alt="Flow การ Update Online ผ่าน GitHub Release">
+      <figcaption>Flow การ Update Online ผ่าน GitHub Release</figcaption>
+    </figure>
+    
+        <ol>
+          <li>เมื่อ service เริ่มทำงาน ระบบจะเช็ก update จาก GitHub Release ให้อัตโนมัติหนึ่งครั้ง</li>
+          <li>ถ้าเป็น Windows .exe update ระบบจะดาวน์โหลด ตรวจ SHA256 แทนที่ไฟล์ .exe และ restart service เพื่อใช้เวอร์ชันใหม่</li>
+          <li>ถ้าเป็น frontend update ระบบจะดาวน์โหลด ตรวจ SHA256 และติดตั้งลงโฟลเดอร์ static ให้อัตโนมัติ</li>
+          <li>ผู้ดูแลระบบยังสามารถเข้าสู่ระบบด้วย admin ไปที่เมนู “ตั้งค่า” แล้วกด “เช็ก Update” เพื่อตรวจซ้ำได้</li>
+          <li>ถ้ามีเวอร์ชันใหม่ที่ต้อง update ด้วยมือ ระบบจะแสดงปุ่มให้กด Update</li>
+          <li>เมื่อ update เฉพาะ frontend สำเร็จ ให้ refresh browser หนึ่งครั้ง</li>
+        </ol>
+      </section>
+
+      <section class="manual-section" id="troubleshoot">
+        <h2>แก้ปัญหาเบื้องต้น</h2>
+        <div class="manual-card">
+          <h3>Login ไม่ได้</h3>
+          <p>ตรวจสอบว่าตั้งค่าฐานข้อมูลสำเร็จแล้ว และบัญชีผู้ใช้มีอยู่ในตาราง <code>opduser</code> ของ HosXP</p>
+        </div>
+        <div class="manual-card">
+          <h3>แปลงแล้วจับคู่ไม่ได้</h3>
+          <p>ตรวจสอบว่า Excel มี column <code>HOSCODE</code> และ <code>PID</code> ถูกต้อง โดยระบบจะตรวจ HOSCODE กับ <code>opdconfig.hospitalcode</code> และตรวจ PID กับ <code>person.person_id</code></p>
+        </div>
+        <div class="manual-card">
+          <h3>Update ไม่ขึ้น</h3>
+          <p>ตรวจสอบ internet ของเครื่อง client, GitHub Release ล่าสุดต้องมี <code>latest.json</code> และไฟล์ update ต้องมีค่า SHA256 ตรงกับ manifest</p>
+        </div>
+      </section>
+
+      <footer class="manual-footer">
+        คู่มือนี้สร้างจากภาพหน้าจอจริงของระบบและ infographic ที่สร้างขึ้นสำหรับอธิบายขั้นตอนการทำงาน · อัปเดตล่าสุด 2026-06-30 21:43
+      </footer>
+
+  </div>
+</article>
+
+  </main>
+</body>
+</html>

@@ -28,11 +28,20 @@
 
 ```powershell
 py -3 -m venv .venv
+.venv\Scripts\python.exe -m pip install --upgrade pip
 .venv\Scripts\python.exe -m pip install -r requirements.txt
 .venv\Scripts\python.exe build_exe.py
 ```
 
 ไฟล์จะอยู่ที่ `dist\DataExchangeTools.exe` แล้วสามารถดับเบิลคลิกเพื่อเปิดใช้งานได้
+
+หลังจากผู้ใช้รัน `.exe` ครั้งแรกบน Windows:
+
+- ระบบจะตรวจ GitHub Release/latest manifest อัตโนมัติ ถ้ามีเวอร์ชันใหม่กว่าจะ update ตาม manifest
+- ระบบจะสร้าง Scheduled Task ชื่อ `DataExchangeToolsService` ให้รัน service อัตโนมัติตอนเปิดเครื่องหรือ login เข้า Windows
+- Scheduled Task จะรันด้วยคำสั่ง `DataExchangeTools.exe --service` จึงไม่เปิด browser อัตโนมัติ
+- ระบบจะสร้าง shortcut ชื่อ `Data Exchange Tools` บน Desktop สำหรับเปิด `http://localhost:8899` เมื่อผู้ใช้ต้องการเข้าใช้งาน
+- ถ้าผู้ใช้ดับเบิลคลิก `.exe` ขณะที่ service รันอยู่แล้ว โปรแกรมจะเปิด browser ไปที่หน้าเว็บแล้วปิดตัว ไม่เปิด service ซ้ำ
 
 ## วิธีรันด้วย Docker บน Linux
 
@@ -71,7 +80,9 @@ Login ด้วย local admin แล้วกดปุ่ม “ปิด servi
 
 ## การอัปเดตโปรแกรมแบบ Online
 
-ระบบจะตรวจ update จาก online manifest ทุก 10 นาทีเมื่อ admin ใช้งานอยู่ และยัง fallback ไปใช้ไฟล์ในโฟลเดอร์ `updates/` ได้ถ้าเช็ก online ไม่สำเร็จ
+เมื่อ service เริ่มทำงาน ระบบจะตรวจ online manifest อัตโนมัติ 1 ครั้ง ถ้าพบ `windows_exe_url` บน Windows build แบบ `.exe` ระบบจะดาวน์โหลด ตรวจ `sha256` สั่งแทนที่ไฟล์ `.exe` และ restart service เพื่อใช้เวอร์ชันใหม่ ถ้าเป็น `frontend_zip_url` จะดาวน์โหลด ตรวจ `sha256` และติดตั้งไฟล์ frontend ลงโฟลเดอร์ `static/` ให้เองทันที ผู้ใช้ refresh browser แล้วจะได้หน้าเว็บเวอร์ชันล่าสุด
+
+หลังจากนั้นระบบยังตรวจ update จาก online manifest ทุก 10 นาทีเมื่อ admin ใช้งานอยู่ และยัง fallback ไปใช้ไฟล์ในโฟลเดอร์ `updates/` ได้ถ้าเช็ก online ไม่สำเร็จ
 
 ถ้าหน้าเว็บขึ้นข้อความประมาณ `เช็ก online ไม่สำเร็จ ... ใช้ local manifest แทน` แปลว่าเครื่องที่รัน `.exe` โหลดไฟล์ `latest.json` จาก internet หรือ server กลางไม่ได้ ไม่ใช่ปัญหาที่ปุ่ม Update โดยตรง ให้ตรวจว่า URL เปิดได้จากเครื่อง Windows เครื่องนั้นโดยไม่ต้อง login
 
@@ -85,6 +96,12 @@ https://github.com/manoth/data-exchange-tools/releases/latest/download/latest.js
 
 ```bash
 UPDATE_MANIFEST_URL=https://your-domain.example/data-exchange-tools/latest.json
+```
+
+ถ้าไม่ต้องการให้ service auto update ตอนเริ่มรัน สามารถปิดได้ด้วย:
+
+```bash
+AUTO_UPDATE_ON_STARTUP=0
 ```
 
 ตัวอย่าง `latest.json` สำหรับ GitHub Release หรือ update server
@@ -158,9 +175,9 @@ https://github.com/manoth/data-exchange-tools/releases/latest/download/latest.js
 
 - update URL ต้องเป็น `https`
 - Windows `.exe` สามารถใช้ `windows_exe_url` และ `windows_exe_sha256` เพื่อให้โปรแกรมดาวน์โหลด exe ใหม่ แทนที่ตัวเอง และเปิดโปรแกรมใหม่อัตโนมัติ
-- Frontend-only update สามารถใช้ `frontend_zip_url` และ `frontend_zip_sha256` เพื่อให้ service ที่กำลังรันอยู่เปลี่ยนหน้าเว็บได้ทันที แล้ว refresh หน้าเว็บ
+- Frontend-only update สามารถใช้ `frontend_zip_url` และ `frontend_zip_sha256` เพื่อให้ service ที่กำลังรันอยู่เปลี่ยนหน้าเว็บได้ทันที แล้ว refresh หน้าเว็บ และจะถูกติดตั้งอัตโนมัติเมื่อ service เริ่มทำงานใหม่
 - online update ต้องมี `sha256` ของ exe หรือ script ให้ตรงกับไฟล์จริง
-- ระบบจะแจ้งเตือนเมื่อพบ update แต่ต้องให้ admin กด “Update” เอง
+- ระบบจะติดตั้ง frontend-only update อัตโนมัติตอนเริ่ม service และถ้าเป็น Windows `.exe` ที่มี `windows_exe_url` ระบบจะ self-update แล้ว restart ตัวเองได้ ส่วน update แบบ script ยังให้ admin กด “Update” เอง
 - ถ้าใช้งาน repo แบบ private ต้องใช้ update URL ที่ client เข้าถึงได้ เช่น GitHub Release/public asset, web server ภายใน, หรือ object storage ที่กำหนดสิทธิ์ไว้
 
 คำนวณ sha256:

@@ -56,15 +56,13 @@ async function handleLogin(event) {
         if (result.must_change_password) {
           showPage('admin-password');
         } else if (result.configured === true) {
-          showPage('dashboard');
-          showSection('upload');
+          await navigateToRoute(consumePendingRoute(), true);
           if (typeof startUpdateAutoCheck === 'function') startUpdateAutoCheck();
         } else {
           showPage('config');
         }
       } else {
-        showPage('dashboard');
-        showSection('upload');
+        await navigateToRoute(consumePendingRoute(), true);
       }
     } else {
       const msg = result?.message || 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง';

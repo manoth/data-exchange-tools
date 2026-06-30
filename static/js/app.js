@@ -3,14 +3,92 @@
 // ============================================================
 
 let updateCheckTimer = null;
+let isRouting = false;
+
+const routeByPage = {
+  login: '/login',
+  'admin-password': '/change-admin-password',
+  config: '/config',
+  service: '/service'
+};
+
+const routeBySection = {
+  upload: '/upload',
+  history: '/history',
+  settings: '/settings',
+  manual: '/manual'
+};
+
+function normalizeRoute(path = window.location.pathname) {
+  const cleanPath = path.replace(/\/+$/, '') || '/';
+  const allowedRoutes = new Set([
+    '/',
+    ...Object.values(routeByPage),
+    ...Object.values(routeBySection)
+  ]);
+  return allowedRoutes.has(cleanPath) ? cleanPath : '/upload';
+}
+
+function setRoute(path, replace = false) {
+  const route = normalizeRoute(path);
+  if (window.location.pathname === route) return;
+  const method = replace ? 'replaceState' : 'pushState';
+  window.history[method]({}, '', route);
+}
+
+function getRequestedRoute() {
+  const route = normalizeRoute();
+  return route === '/' ? '/upload' : route;
+}
+
+function rememberRouteForAfterLogin(route = getRequestedRoute()) {
+  if (route !== '/login' && route !== '/change-admin-password') {
+    sessionStorage.setItem('dex_pending_route', route);
+  }
+}
+
+function consumePendingRoute() {
+  const route = sessionStorage.getItem('dex_pending_route') || getRequestedRoute();
+  sessionStorage.removeItem('dex_pending_route');
+  return route;
+}
+
+function rememberReturnRoute(targetRoute) {
+  const currentRoute = getRequestedRoute();
+  const blockedRoutes = new Set(['/', '/login', '/change-admin-password', targetRoute]);
+
+  if (!blockedRoutes.has(currentRoute)) {
+    sessionStorage.setItem('dex_return_route', currentRoute);
+  }
+}
+
+function consumeReturnRoute() {
+  const route = normalizeRoute(sessionStorage.getItem('dex_return_route') || '/upload');
+  sessionStorage.removeItem('dex_return_route');
+
+  if (route === '/login' || route === '/change-admin-password') {
+    return '/upload';
+  }
+
+  return route;
+}
+
+function routeToCurrentPath(replace = false) {
+  navigateToRoute(getRequestedRoute(), replace);
+}
 
 /**
  * Show a page (login, config, dashboard)
  */
-function showPage(pageName) {
+function showPage(pageName, updateRoute = true) {
   if ((pageName === 'config' || pageName === 'service') && !isAdminSessionReady()) {
+    rememberRouteForAfterLogin(routeByPage[pageName] || '/upload');
     prepareAdminLogin();
     return;
+  }
+
+  if (!isRouting && updateRoute && (pageName === 'config' || pageName === 'service')) {
+    rememberReturnRoute(routeByPage[pageName]);
   }
 
   const pages = document.querySelectorAll('.page');
@@ -23,6 +101,10 @@ function showPage(pageName) {
     targetPage.classList.remove('hidden');
   }
 
+  if (!isRouting && updateRoute && routeByPage[pageName]) {
+    setRoute(routeByPage[pageName]);
+  }
+
   // Page-specific initialization
   if (pageName === 'dashboard') {
     initDashboard();
@@ -31,14 +113,14 @@ function showPage(pageName) {
   }
 }
 
-function goToUploadPage() {
-  showPage('dashboard');
-  showSection('upload');
+function goToUploadPage(updateRoute = true) {
+  showPage('dashboard', false);
+  showSection('upload', updateRoute);
 }
 
 function returnFromConfig() {
   if (checkAuth() && getUserData()) {
-    goToUploadPage();
+    navigateToRoute(consumeReturnRoute(), true);
   } else {
     showPage('login');
   }
@@ -47,12 +129,14 @@ function returnFromConfig() {
 /**
  * Show a dashboard section (upload, history, settings)
  */
-function showSection(sectionName) {
+function showSection(sectionName, updateRoute = true) {
   if (sectionName === 'settings' && !isAdminSessionReady()) {
-    showSection('upload');
+    showSection('upload', updateRoute);
     showToast('เมนูตั้งค่าจัดการได้เฉพาะ admin', 'warning');
     return;
   }
+
+  showPage('dashboard', false);
 
   const sections = document.querySelectorAll('.section');
   sections.forEach(section => {
@@ -73,11 +157,79 @@ function showSection(sectionName) {
     }
   });
 
+  if (!isRouting && updateRoute && routeBySection[sectionName]) {
+    setRoute(routeBySection[sectionName]);
+  }
+
   // Section-specific initialization
   if (sectionName === 'settings') {
     loadSettingsStatus();
   } else if (sectionName === 'history') {
     loadHistory();
+  } else if (sectionName === 'manual') {
+    loadManualContent();
+  }
+}
+
+async function navigateToRoute(route, replace = false) {
+  const targetRoute = normalizeRoute(route);
+  isRouting = true;
+
+  try {
+    if (!checkAuth()) {
+      rememberRouteForAfterLogin(targetRoute);
+      showPage('login', false);
+      setRoute('/login', replace);
+      return;
+    }
+
+    const userData = getUserData();
+    if (userData?.role === 'admin' && userData.must_change_password) {
+      showPage('admin-password', false);
+      setRoute('/change-admin-password', replace);
+      return;
+    }
+
+    if (userData?.role === 'admin' && targetRoute !== '/config') {
+      const configured = await checkConfigStatus();
+      if (!configured) {
+        showPage('config', false);
+        setRoute('/config', replace);
+        return;
+      }
+    }
+
+    if ((targetRoute === '/config' || targetRoute === '/service' || targetRoute === '/settings') && !isAdminSessionReady()) {
+      showSection('upload', false);
+      setRoute('/upload', replace);
+      showToast('เมนูนี้จัดการได้เฉพาะ admin', 'warning');
+      return;
+    }
+
+    if (targetRoute === '/config') {
+      showPage('config', false);
+      setRoute('/config', replace);
+      return;
+    }
+
+    if (targetRoute === '/service') {
+      showPage('service', false);
+      setRoute('/service', replace);
+      return;
+    }
+
+    const sectionByRoute = {
+      '/upload': 'upload',
+      '/history': 'history',
+      '/settings': 'settings',
+      '/manual': 'manual'
+    };
+
+    const section = sectionByRoute[targetRoute] || 'upload';
+    showSection(section, false);
+    setRoute(routeBySection[section] || '/upload', replace);
+  } finally {
+    isRouting = false;
   }
 }
 
@@ -123,6 +275,25 @@ function applyRoleVisibility() {
 
   if (!isAdmin && document.getElementById('section-settings')?.classList.contains('active')) {
     showSection('upload');
+  }
+}
+
+async function loadManualContent() {
+  const container = document.getElementById('manual-content');
+  if (!container || container.dataset.loaded === 'true') return;
+
+  try {
+    const response = await fetch('/static/manual_fragment.html', { cache: 'no-store' });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    container.innerHTML = await response.text();
+    container.dataset.loaded = 'true';
+  } catch (error) {
+    container.innerHTML = `
+      <div class="empty-state">
+        <p>ไม่สามารถโหลดคู่มือการใช้งานได้</p>
+        <p class="text-secondary">${escapeHtml(error.message || 'ไม่ทราบสาเหตุ')}</p>
+      </div>
+    `;
   }
 }
 
@@ -187,27 +358,37 @@ document.addEventListener('DOMContentLoaded', async function () {
   localStorage.removeItem('dex_token');
   localStorage.removeItem('dex_user');
 
+  const requestedRoute = getRequestedRoute();
+
   // Check authentication first
   if (checkAuth()) {
     const userData = getUserData();
     if (userData?.role === 'admin') {
       if (userData.must_change_password) {
-        showPage('admin-password');
+        showPage('admin-password', false);
+        setRoute('/change-admin-password', true);
       } else {
         const configured = await checkConfigStatus();
         if (configured) {
-          goToUploadPage();
+          await navigateToRoute(requestedRoute, true);
           startUpdateAutoCheck();
         } else {
-          showPage('config');
+          showPage('config', false);
+          setRoute('/config', true);
         }
       }
     } else {
-      goToUploadPage();
+      await navigateToRoute(requestedRoute, true);
     }
   } else {
-    showPage('login');
+    rememberRouteForAfterLogin(requestedRoute);
+    showPage('login', false);
+    setRoute('/login', true);
   }
+
+  window.addEventListener('popstate', () => {
+    routeToCurrentPath(true);
+  });
 
   // Handle responsive sidebar close on mobile when clicking outside
   document.addEventListener('click', function (e) {

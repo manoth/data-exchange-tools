@@ -33,6 +33,14 @@ def _normalize_pid(value) -> str:
     return text
 
 
+def _normalize_hoscode(value) -> str:
+    """Normalize hospital code จาก opdconfig/excel ให้เทียบกันตรงที่สุด"""
+    text = _cell_to_text(value).strip().strip('"').strip("'")
+    if text.endswith(".0") and text[:-2].isdigit():
+        text = text[:-2]
+    return text
+
+
 def _normalize_column_name(value, index: int) -> str:
     text = _cell_to_text(value) if value is not None else ""
     return (text or f"COLUMN_{index + 1}").strip().upper()
@@ -136,28 +144,48 @@ def transform_data(file_id: str, data: list, columns: list, selected_hoscodes: l
         dict: {data, columns, matched_count, unmatched_count}
     """
     try:
+        father_column = next((col for col in columns if str(col).upper() == "FATHER"), None)
+        mother_column = next((col for col in columns if str(col).upper() == "MOTHER"), None)
+        has_father_column = father_column is not None
+        has_mother_column = mother_column is not None
         person_columns = ["PERSON_CID", "FULL_NAME"]
+
         selected_hoscodes = [str(code).strip() for code in (selected_hoscodes or []) if str(code).strip()]
         if selected_hoscodes:
-            selected_set = set(selected_hoscodes)
-            data = [row for row in data if _cell_to_text(row.get("HOSCODE", "")) in selected_set]
+            selected_set = {_normalize_hoscode(code) for code in selected_hoscodes}
+            data = [row for row in data if _normalize_hoscode(row.get("HOSCODE", "")) in selected_set]
+
+        def empty_person_fields() -> dict:
+            fields = {
+                "PERSON_CID": "",
+                "FULL_NAME": "",
+                "_matched": False,
+            }
+            return fields
+
+        def apply_person_fields(target: dict, person: dict) -> None:
+            target["PERSON_CID"] = person.get("cid", "")
+            target["FULL_NAME"] = person.get("full_name", "")
+            if father_column and person.get("father_name"):
+                target[father_column] = person.get("father_name", "")
+            if mother_column and person.get("mother_name"):
+                target[mother_column] = person.get("mother_name", "")
+            target["_matched"] = True
 
         # ค้นหาคอลัมน์ pid (ไม่สนใจตัวพิมพ์เล็ก/ใหญ่)
         pid_column = None
+        hoscode_column = None
         for col in columns:
             if col.lower() == "pid":
                 pid_column = col
-                break
+            if col.lower() == "hoscode":
+                hoscode_column = col
 
-        if pid_column is None:
+        if pid_column is None or hoscode_column is None:
             transformed_data = []
             for row in data:
                 new_row = dict(row)
-                new_row.update({
-                    "PERSON_CID": "",
-                    "FULL_NAME": "",
-                    "_matched": False,
-                })
+                new_row.update(empty_person_fields())
                 transformed_data.append(new_row)
             return {
                 "data": transformed_data,
@@ -167,7 +195,6 @@ def transform_data(file_id: str, data: list, columns: list, selected_hoscodes: l
             }
 
         # ดึงค่า pid ทั้งหมดจากข้อมูล โดยเก็บทั้งแบบเดิมและแบบตัดศูนย์นำหน้า
-        pid_values = []
         pid_lookup_keys = set()
         for row in data:
             pid_str = _normalize_pid(row.get(pid_column, ""))
@@ -182,11 +209,7 @@ def transform_data(file_id: str, data: list, columns: list, selected_hoscodes: l
             transformed_data = []
             for row in data:
                 new_row = dict(row)
-                new_row.update({
-                    "PERSON_CID": "",
-                    "FULL_NAME": "",
-                    "_matched": False,
-                })
+                new_row.update(empty_person_fields())
                 transformed_data.append(new_row)
             return {
                 "data": transformed_data,
@@ -197,10 +220,22 @@ def transform_data(file_id: str, data: list, columns: list, selected_hoscodes: l
 
         # Query ข้อมูลจากตาราง person แบบ batch เพื่อไม่ให้ IN clause ใหญ่เกินไป
         results = []
+        local_hoscodes = set()
         connection = None
         try:
             connection = get_connection()
             with connection.cursor() as cursor:
+                cursor.execute("""
+                    SELECT hospitalcode
+                    FROM opdconfig
+                    WHERE hospitalcode IS NOT NULL AND hospitalcode <> ''
+                """)
+                local_hoscodes = {
+                    _normalize_hoscode(row.get("hospitalcode"))
+                    for row in cursor.fetchall()
+                    if _normalize_hoscode(row.get("hospitalcode"))
+                }
+
                 for batch in _chunks(pid_values):
                     placeholders = ",".join(["%s"] * len(batch))
                     sql = f"""
@@ -209,7 +244,9 @@ def transform_data(file_id: str, data: list, columns: list, selected_hoscodes: l
                             cid,
                             pname,
                             fname,
-                            lname
+                            lname,
+                            father_name,
+                            mother_name
                         FROM person
                         WHERE CAST(person_id AS CHAR) IN ({placeholders})
                     """
@@ -230,7 +267,9 @@ def transform_data(file_id: str, data: list, columns: list, selected_hoscodes: l
                     str(row.get("fname") or ""),
                     " ",
                     str(row.get("lname") or ""),
-                ]).strip()
+                ]).strip(),
+                "father_name": row.get("father_name", "") or "",
+                "mother_name": row.get("mother_name", "") or "",
             }
             person_map[person_id] = person
             if person_id.isdigit():
@@ -244,26 +283,22 @@ def transform_data(file_id: str, data: list, columns: list, selected_hoscodes: l
         for row in data:
             new_row = dict(row)
             pid_str = _normalize_pid(row.get(pid_column, ""))
+            row_hoscode = _normalize_hoscode(row.get(hoscode_column, ""))
+            hoscode_matched = bool(row_hoscode and row_hoscode in local_hoscodes)
 
-            if pid_str:
+            if pid_str and hoscode_matched:
                 lookup_keys = [pid_str]
                 if pid_str.isdigit():
                     lookup_keys.append(str(int(pid_str)))
                 person = next((person_map[key] for key in lookup_keys if key in person_map), None)
                 if person:
-                    new_row["PERSON_CID"] = person["cid"]
-                    new_row["FULL_NAME"] = person["full_name"]
-                    new_row["_matched"] = True
+                    apply_person_fields(new_row, person)
                     matched_count += 1
                 else:
-                    new_row["PERSON_CID"] = ""
-                    new_row["FULL_NAME"] = ""
-                    new_row["_matched"] = False
+                    new_row.update(empty_person_fields())
                     unmatched_count += 1
             else:
-                new_row["PERSON_CID"] = ""
-                new_row["FULL_NAME"] = ""
-                new_row["_matched"] = False
+                new_row.update(empty_person_fields())
                 unmatched_count += 1
 
             transformed_data.append(new_row)

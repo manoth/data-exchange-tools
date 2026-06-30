@@ -9,6 +9,7 @@ dist/
 release/
 *.spec
 *.xlsx
+*.sql
 opduser.sql
 person.sql
 config.json
@@ -22,3 +23,4 @@ updates/*
 !updates/.gitkeep
 
 DataExchangeTools-client-*.zip
+คู่มือ/

@@ -8,6 +8,7 @@ import uuid
 import shutil
 import webbrowser
 import threading
+import asyncio
 import sys
 import json
 import subprocess
@@ -17,6 +18,7 @@ import urllib.request
 import urllib.error
 import time
 import zipfile
+import socket
 from datetime import datetime
 
 from fastapi import FastAPI, File, UploadFile, Request, HTTPException, Depends
@@ -35,7 +37,11 @@ from models import (
 from transform import process_upload, transform_data, export_excel
 
 # กำหนด path
-APP_VERSION = "0.0.8"
+APP_VERSION = "0.0.9"
+APP_HOST = os.environ.get("APP_HOST", "0.0.0.0")
+APP_PORT = int(os.environ.get("PORT", "8899"))
+APP_URL = os.environ.get("APP_URL", f"http://localhost:{APP_PORT}")
+SERVICE_MODE = "--service" in sys.argv or os.environ.get("DATA_EXCHANGE_SERVICE_MODE", "").strip().lower() in ("1", "true", "yes")
 UPLOADS_DIR = os.path.join(APP_DIR, "uploads")
 UPDATE_DIR = os.path.join(APP_DIR, "updates")
 UPDATE_MANIFEST = os.path.join(UPDATE_DIR, "manifest.json")
@@ -43,6 +49,7 @@ WEB_VERSION_FILE = os.path.join(UPDATE_DIR, "frontend_version.json")
 DEFAULT_UPDATE_MANIFEST_URL = "https://github.com/manoth/data-exchange-tools/releases/latest/download/latest.json"
 UPDATE_MANIFEST_URL = os.environ.get("UPDATE_MANIFEST_URL", DEFAULT_UPDATE_MANIFEST_URL).strip()
 UPDATE_CHECK_INTERVAL_SECONDS = int(os.environ.get("UPDATE_CHECK_INTERVAL_SECONDS", "600"))
+AUTO_UPDATE_ON_STARTUP = os.environ.get("AUTO_UPDATE_ON_STARTUP", "1").strip().lower() not in ("0", "false", "no", "off")
 BUNDLED_STATIC_DIR = (
     os.path.join(sys._MEIPASS, "static")
     if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS")
@@ -57,7 +64,18 @@ app = FastAPI(title="Data Exchange Tools")
 upload_store = {}
 # เก็บประวัติการใช้งาน
 history_store = []
+recent_upload_cache = {}
+upload_cache_lock = threading.Lock()
 update_cache = {"checked_at": None, "status": None, "last_error": ""}
+startup_update_state = {
+    "running": False,
+    "checked_at": None,
+    "success": None,
+    "message": "",
+    "from_version": "",
+    "to_version": "",
+}
+startup_update_lock = threading.Lock()
 
 # ────────────────────────────────────────────
 # Startup Event
@@ -70,6 +88,8 @@ async def startup_event():
     os.makedirs(UPDATE_DIR, exist_ok=True)
     if getattr(sys, "frozen", False):
         os.makedirs(STATIC_OVERRIDE_DIR, exist_ok=True)
+    _ensure_windows_client_integration()
+    _start_startup_auto_update()
 
 
 # ────────────────────────────────────────────
@@ -102,7 +122,7 @@ async def serve_static(path: str):
     file_path = _resolve_static_path(path)
     if not file_path:
         raise HTTPException(status_code=404, detail="ไม่พบไฟล์")
-    return FileResponse(file_path)
+    return FileResponse(file_path, headers={"Cache-Control": "no-store"})
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -123,6 +143,72 @@ async def serve_index():
     </body>
     </html>
     """)
+
+
+@app.get("/manual/open", response_class=HTMLResponse)
+async def open_manual_html():
+    """เปิดคู่มือการใช้งานแบบหน้าเว็บในระบบ"""
+    manual_path = _resolve_static_path("manual.html")
+    if not manual_path:
+        manual_path = os.path.join(APP_DIR, "คู่มือ", "manual.html")
+    if not os.path.exists(manual_path):
+        raise HTTPException(status_code=404, detail="ไม่พบไฟล์คู่มือการใช้งาน")
+    with open(manual_path, "r", encoding="utf-8") as f:
+        return HTMLResponse(content=f.read())
+
+
+@app.get("/manual/assets/{filename}")
+async def serve_manual_asset(filename: str):
+    """เสิร์ฟภาพประกอบคู่มือจาก static ที่ update ได้ หรือ fallback ไปโฟลเดอร์คู่มือ"""
+    safe_name = os.path.basename(filename)
+    static_asset_path = _resolve_static_path(f"images/manual/{safe_name}")
+    if static_asset_path:
+        return FileResponse(static_asset_path, headers={"Cache-Control": "no-store"})
+
+    manual_image_dir = os.path.join(APP_DIR, "คู่มือ", "images", "manual-web")
+    asset_path = _safe_join(manual_image_dir, safe_name)
+    if not asset_path or not os.path.exists(asset_path) or not os.path.isfile(asset_path):
+        raise HTTPException(status_code=404, detail="ไม่พบไฟล์ภาพคู่มือ")
+    return FileResponse(asset_path, headers={"Cache-Control": "no-store"})
+
+
+@app.get("/manual/pdf")
+async def open_manual_pdf():
+    """เปิดคู่มือการใช้งาน PDF รุ่นเอกสาร หากมีไฟล์อยู่"""
+    manual_path = os.path.join(APP_DIR, "คู่มือ", "DataExchangeTools_User_Manual.pdf")
+    if not os.path.exists(manual_path):
+        raise HTTPException(status_code=404, detail="ไม่พบไฟล์คู่มือการใช้งาน PDF")
+    return FileResponse(
+        manual_path,
+        media_type="application/pdf",
+        filename="DataExchangeTools_User_Manual.pdf"
+    )
+
+
+@app.get("/manual/docx")
+async def download_manual_docx():
+    """ดาวน์โหลดคู่มือการใช้งาน Word"""
+    manual_path = os.path.join(APP_DIR, "คู่มือ", "DataExchangeTools_User_Manual.docx")
+    if not os.path.exists(manual_path):
+        raise HTTPException(status_code=404, detail="ไม่พบไฟล์คู่มือการใช้งาน")
+    return FileResponse(
+        manual_path,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        filename="DataExchangeTools_User_Manual.docx"
+    )
+
+
+@app.get("/login", response_class=HTMLResponse)
+@app.get("/change-admin-password", response_class=HTMLResponse)
+@app.get("/config", response_class=HTMLResponse)
+@app.get("/service", response_class=HTMLResponse)
+@app.get("/upload", response_class=HTMLResponse)
+@app.get("/history", response_class=HTMLResponse)
+@app.get("/settings", response_class=HTMLResponse)
+@app.get("/manual", response_class=HTMLResponse)
+async def serve_app_route():
+    """รองรับ frontend routes เพื่อให้ refresh แล้วอยู่หน้าเดิม"""
+    return await serve_index()
 
 
 # ────────────────────────────────────────────
@@ -479,7 +565,7 @@ def _validate_zip_member(member_name: str) -> str:
         normalized = normalized[len("static/"):]
     if normalized.startswith("../") or "/../" in normalized or normalized == "..":
         return ""
-    allowed_roots = ("css/", "js/", "images/", "index.html")
+    allowed_roots = ("css/", "js/", "images/", "index.html", "manual.html", "manual_fragment.html")
     if not any(normalized == root.rstrip("/") or normalized.startswith(root) for root in allowed_roots):
         return ""
     return normalized
@@ -557,6 +643,219 @@ def _schedule_process_exit(delay_seconds: float = 1.0):
 
     timer = threading.Thread(target=stop_process, daemon=True)
     timer.start()
+
+
+def _is_port_open(host: str = "127.0.0.1", port: int = APP_PORT) -> bool:
+    try:
+        with socket.create_connection((host, port), timeout=0.5):
+            return True
+    except OSError:
+        return False
+
+
+def _write_update_log(message: str):
+    try:
+        os.makedirs(UPDATE_DIR, exist_ok=True)
+        log_path = os.path.join(UPDATE_DIR, "update.log")
+        with open(log_path, "a", encoding="utf-8") as log_file:
+            log_file.write(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] {message}\n")
+    except Exception:
+        pass
+
+
+def _set_startup_update_state(**kwargs):
+    with startup_update_lock:
+        startup_update_state.update(kwargs)
+
+
+def _get_startup_update_state() -> dict:
+    with startup_update_lock:
+        return dict(startup_update_state)
+
+
+def _run_startup_auto_update():
+    if not AUTO_UPDATE_ON_STARTUP:
+        _set_startup_update_state(
+            running=False,
+            checked_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            success=True,
+            message="ปิดใช้งาน auto update ตอนเริ่ม service",
+        )
+        return
+
+    _set_startup_update_state(
+        running=True,
+        checked_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        success=None,
+        message="กำลังตรวจสอบ update ตอนเริ่ม service",
+    )
+    _write_update_log("startup auto-update: checking online manifest")
+
+    try:
+        status = _get_update_status(force=True)
+        if not status.get("update_available"):
+            message = status.get("message") or "ไม่มี update ใหม่"
+            _set_startup_update_state(
+                running=False,
+                success=True,
+                message=f"startup auto-update: {message}",
+                from_version=status.get("current_version", ""),
+                to_version=status.get("latest_version", ""),
+            )
+            _write_update_log(f"startup auto-update: no update ({message})")
+            return
+
+        manifest = _get_active_update_manifest()
+        latest_version = status.get("latest_version") or str(manifest.get("version") or "")
+        current_version = status.get("current_version") or _get_current_version()
+        frontend_zip_url = _get_manifest_frontend_zip_url(manifest)
+        exe_url = _get_manifest_exe_url(manifest)
+
+        if exe_url and os.name == "nt" and getattr(sys, "frozen", False):
+            new_exe_path = _download_update_exe(manifest)
+            updater_path = _write_windows_self_updater(new_exe_path)
+            log_path = os.path.join(UPDATE_DIR, "update.log")
+            log_file = open(log_path, "a", encoding="utf-8")
+            log_file.write(f"\n[{datetime.now():%Y-%m-%d %H:%M:%S}] startup self-update {latest_version}\n")
+            log_file.flush()
+            subprocess.Popen(
+                ["cmd", "/c", updater_path],
+                cwd=UPDATE_DIR,
+                stdout=log_file,
+                stderr=subprocess.STDOUT,
+                creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
+            )
+            message = f"ดาวน์โหลด exe v{latest_version} แล้ว กำลัง restart service เพื่อใช้เวอร์ชันใหม่"
+            _set_startup_update_state(
+                running=False,
+                success=True,
+                message=message,
+                from_version=current_version,
+                to_version=latest_version,
+            )
+            _write_update_log(f"startup auto-update: {message}")
+            _schedule_process_exit(1.0)
+            return
+
+        if frontend_zip_url:
+            zip_path = _download_frontend_zip(manifest)
+            file_count = _apply_frontend_zip(zip_path, latest_version)
+            message = f"อัปเดต frontend เป็น v{latest_version} สำเร็จ {file_count} ไฟล์"
+            _set_startup_update_state(
+                running=False,
+                success=True,
+                message=message,
+                from_version=current_version,
+                to_version=latest_version,
+            )
+            _write_update_log(f"startup auto-update: {message}")
+            return
+
+        if exe_url:
+            message = "พบ update แบบ exe/backend แต่ auto self-update ใช้ได้เฉพาะ Windows build แบบ .exe"
+        else:
+            message = "พบ update แต่ไม่มี frontend zip ที่ apply อัตโนมัติได้"
+        _set_startup_update_state(
+            running=False,
+            success=False,
+            message=message,
+            from_version=current_version,
+            to_version=latest_version,
+        )
+        _write_update_log(f"startup auto-update: skipped ({message})")
+    except Exception as e:
+        message = f"startup auto-update ไม่สำเร็จ: {e}"
+        _set_startup_update_state(
+            running=False,
+            success=False,
+            message=message,
+        )
+        _write_update_log(message)
+
+
+def _start_startup_auto_update():
+    if not AUTO_UPDATE_ON_STARTUP:
+        _run_startup_auto_update()
+        return
+    worker = threading.Thread(target=_run_startup_auto_update, daemon=True)
+    worker.start()
+
+
+def _desktop_dir() -> str:
+    user_profile = os.environ.get("USERPROFILE") or os.path.expanduser("~")
+    candidates = [
+        os.path.join(user_profile, "Desktop"),
+        os.path.join(user_profile, "OneDrive", "Desktop"),
+    ]
+    for path in candidates:
+        if os.path.isdir(path):
+            return path
+    return candidates[0]
+
+
+def _ensure_desktop_shortcut():
+    if os.name != "nt" or not getattr(sys, "frozen", False):
+        return
+
+    desktop = _desktop_dir()
+    os.makedirs(desktop, exist_ok=True)
+    shortcut_path = os.path.join(desktop, "Data Exchange Tools.url")
+    content = "\n".join([
+        "[InternetShortcut]",
+        f"URL={APP_URL}",
+        f"IconFile={os.path.abspath(sys.executable)}",
+        "IconIndex=0",
+        "",
+    ])
+    try:
+        existing = ""
+        if os.path.exists(shortcut_path):
+            with open(shortcut_path, "r", encoding="utf-8", errors="ignore") as f:
+                existing = f.read()
+        if existing != content:
+            with open(shortcut_path, "w", encoding="utf-8") as f:
+                f.write(content)
+        _write_update_log(f"windows startup: desktop shortcut ready {shortcut_path}")
+    except Exception as e:
+        _write_update_log(f"windows startup: desktop shortcut failed: {e}")
+
+
+def _ensure_windows_startup_task():
+    if os.name != "nt" or not getattr(sys, "frozen", False):
+        return
+
+    task_name = "DataExchangeToolsService"
+    exe_path = os.path.abspath(sys.executable)
+    task_run = f'"{exe_path}" --service'
+    command = [
+        "schtasks",
+        "/Create",
+        "/TN", task_name,
+        "/SC", "ONLOGON",
+        "/TR", task_run,
+        "/RL", "LIMITED",
+        "/F",
+    ]
+    try:
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=15,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        if result.returncode == 0:
+            _write_update_log(f"windows startup: scheduled task ready ({task_name})")
+        else:
+            detail = (result.stderr or result.stdout or "").strip()
+            _write_update_log(f"windows startup: scheduled task failed: {detail}")
+    except Exception as e:
+        _write_update_log(f"windows startup: scheduled task failed: {e}")
+
+
+def _ensure_windows_client_integration():
+    _ensure_desktop_shortcut()
+    _ensure_windows_startup_task()
 
 
 # ────────────────────────────────────────────
@@ -704,7 +1003,9 @@ async def admin_shutdown(current_admin: dict = Depends(get_current_admin)):
 async def version_status(force: bool = False, current_admin: dict = Depends(get_current_admin)):
     """ตรวจสอบว่ามี update script รุ่นใหม่หรือไม่"""
     try:
-        return _get_update_status(force=force)
+        status = _get_update_status(force=force)
+        status["startup_auto_update"] = _get_startup_update_state()
+        return status
     except Exception as e:
         return JSONResponse(
             status_code=500,
@@ -810,6 +1111,8 @@ async def upload_file(
     current_user: dict = Depends(get_current_user)
 ):
     """อัพโหลดไฟล์ Excel"""
+    cache_key = None
+    should_process = False
     try:
         # ตรวจสอบนามสกุลไฟล์
         if not file.filename.lower().endswith('.xlsx'):
@@ -821,8 +1124,47 @@ async def upload_file(
                 }
             )
 
-        # สร้าง file_id
-        file_id = str(uuid.uuid4())
+        content = await file.read()
+        file_hash = hashlib.sha256(content).hexdigest()
+        username = current_user.get("username", "")
+        cache_key = f"{username}:{file.filename}:{len(content)}:{file_hash}"
+        cached_upload = None
+
+        with upload_cache_lock:
+            cached_upload = recent_upload_cache.get(cache_key)
+            if not cached_upload or time.time() - cached_upload.get("created_at", 0) > 10:
+                cached_upload = {
+                    "file_id": str(uuid.uuid4()),
+                    "created_at": time.time(),
+                    "status": "processing"
+                }
+                recent_upload_cache[cache_key] = cached_upload
+                should_process = True
+
+        if not should_process:
+            for _ in range(150):
+                cached_info = upload_store.get(cached_upload["file_id"])
+                if cached_info:
+                    return {
+                        "success": True,
+                        "file_id": cached_upload["file_id"],
+                        "preview": cached_info["data"][:5],
+                        "columns": cached_info["columns"],
+                        "total_rows": cached_info["total_rows"],
+                        "facilities": cached_info.get("facilities", []),
+                        "duplicate": True
+                    }
+                await asyncio.sleep(0.1)
+
+            return JSONResponse(
+                status_code=409,
+                content={
+                    "success": False,
+                    "message": "ไฟล์นี้กำลังอัปโหลดอยู่ กรุณารอสักครู่"
+                }
+            )
+
+        file_id = cached_upload["file_id"]
 
         # บันทึกไฟล์
         os.makedirs(UPLOADS_DIR, exist_ok=True)
@@ -831,7 +1173,6 @@ async def upload_file(
         file_path = os.path.join(UPLOADS_DIR, saved_filename)
 
         with open(file_path, "wb") as buffer:
-            content = await file.read()
             buffer.write(content)
 
         # ประมวลผลไฟล์
@@ -858,6 +1199,16 @@ async def upload_file(
             "status": "uploaded"
         })
 
+        recent_upload_cache[cache_key] = {
+            "file_id": file_id,
+            "created_at": time.time(),
+            "status": "done"
+        }
+        cutoff = time.time() - 60
+        for key, value in list(recent_upload_cache.items()):
+            if value.get("created_at", 0) < cutoff:
+                recent_upload_cache.pop(key, None)
+
         return {
             "success": True,
             "file_id": file_id,
@@ -868,6 +1219,9 @@ async def upload_file(
         }
 
     except Exception as e:
+        if should_process and cache_key:
+            with upload_cache_lock:
+                recent_upload_cache.pop(cache_key, None)
         return JSONResponse(
             status_code=500,
             content={
@@ -911,6 +1265,7 @@ async def transform(
 
         # อัพเดทข้อมูลใน store
         upload_store[file_id]["transformed_data"] = result["data"]
+        upload_store[file_id]["transformed_columns"] = result["columns"]
         upload_store[file_id]["output_path"] = output_path
         upload_store[file_id]["status"] = "completed"
         upload_store[file_id]["matched_count"] = result["matched_count"]
@@ -1001,6 +1356,44 @@ async def get_history(current_user: dict = Depends(get_current_user)):
     }
 
 
+@app.get("/api/history/{file_id}")
+async def get_history_detail(
+    file_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """ดึงรายละเอียดผลการแปลงข้อมูลเพื่อกลับมาดู/กรองในตารางได้"""
+    if file_id not in upload_store:
+        raise HTTPException(
+            status_code=404,
+            detail="ไม่พบข้อมูลประวัติที่ระบุ"
+        )
+
+    upload_info = upload_store[file_id]
+    transformed_data = upload_info.get("transformed_data")
+    if not transformed_data:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "success": False,
+                "message": "รายการนี้ยังไม่มีผลการแปลงข้อมูล"
+            }
+        )
+
+    transformed_columns = upload_info.get("transformed_columns")
+    if not transformed_columns:
+        transformed_columns = ["PERSON_CID", "FULL_NAME"] + list(upload_info.get("columns", []))
+    return {
+        "success": True,
+        "file_id": file_id,
+        "filename": upload_info.get("original_filename", ""),
+        "columns": transformed_columns,
+        "data": transformed_data,
+        "total_rows": len(transformed_data),
+        "matched_count": upload_info.get("matched_count", 0),
+        "unmatched_count": upload_info.get("unmatched_count", 0)
+    }
+
+
 # ────────────────────────────────────────────
 # Entry Point
 # ────────────────────────────────────────────
@@ -1020,23 +1413,29 @@ if __name__ == "__main__":
     print("=" * 50)
     print("  ⚙️  Data Exchange Tools")
     print("=" * 50)
-    print(f"  🌐 URL: http://localhost:8899")
+    print(f"  🌐 URL: {APP_URL}")
     print(f"  📁 Uploads: {UPLOADS_DIR}")
     print("=" * 50)
     print()
 
-    # เปิด browser หลังจาก 1.5 วินาที
-    def open_browser():
-        webbrowser.open("http://localhost:8899")
+    if _is_port_open(port=APP_PORT):
+        if not SERVICE_MODE:
+            webbrowser.open(APP_URL)
+        sys.exit(0)
 
-    timer = threading.Timer(1.5, open_browser)
-    timer.daemon = True
-    timer.start()
+    # เปิด browser เฉพาะตอนผู้ใช้ดับเบิลคลิกเอง ไม่เปิดจาก Windows Startup task
+    if not SERVICE_MODE:
+        def open_browser():
+            webbrowser.open(APP_URL)
+
+        timer = threading.Timer(1.5, open_browser)
+        timer.daemon = True
+        timer.start()
 
     # เริ่ม server
     uvicorn.run(
         app,
-        host="0.0.0.0",
-        port=8899,
+        host=APP_HOST,
+        port=APP_PORT,
         log_level="info"
     )

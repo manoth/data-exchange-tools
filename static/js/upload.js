@@ -15,6 +15,8 @@ let searchTerm = '';
 let availableFacilities = [];
 let selectedHoscodes = [];
 let facilityEventsBound = false;
+let uploadEventsBound = false;
+let isUploading = false;
 
 /**
  * Initialize upload zone with drag & drop
@@ -25,6 +27,8 @@ function initUpload() {
 
   if (!zone || !fileInput) return;
   bindFacilitySelectorEvents();
+  if (uploadEventsBound) return;
+  uploadEventsBound = true;
 
   // Prevent default drag behaviors on the whole document
   ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
@@ -123,6 +127,11 @@ function bindFacilitySelectorEvents() {
  * Handle file selection
  */
 function handleFileSelect(file) {
+  if (isUploading) {
+    showToast('กำลังอัปโหลดไฟล์อยู่ กรุณารอสักครู่', 'warning');
+    return;
+  }
+
   const validTypes = [
     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
   ];
@@ -145,6 +154,9 @@ async function uploadFile(file) {
   const fileInfo = document.getElementById('file-info');
   const progressContainer = document.getElementById('progress-container');
   const progressBar = document.getElementById('progress-bar');
+
+  if (isUploading) return;
+  isUploading = true;
 
   // Show progress
   zone.classList.add('hidden');
@@ -183,6 +195,7 @@ async function uploadFile(file) {
       setTimeout(() => {
         progressContainer.classList.add('hidden');
         fileInfo.classList.remove('hidden');
+        document.getElementById('btn-new-upload-top')?.classList.remove('hidden');
 
         // Show preview
         if (result.preview && result.columns) {
@@ -201,6 +214,10 @@ async function uploadFile(file) {
     progressContainer.classList.add('hidden');
     zone.classList.remove('hidden');
     showToast(error.message || 'เกิดข้อผิดพลาดในการอัปโหลดไฟล์', 'error');
+  } finally {
+    isUploading = false;
+    const fileInput = document.getElementById('file-input');
+    if (fileInput) fileInput.value = '';
   }
 }
 
@@ -341,6 +358,42 @@ function renderFacilityOptions(keyword = '') {
   container.innerHTML = html;
 }
 
+function showResultData(result, options = {}) {
+  currentFileId = result.file_id || currentFileId;
+  allData = result.data || [];
+  currentColumns = result.columns || [];
+  filteredData = [...allData];
+  currentPage = 1;
+  rowsPerPage = 20;
+  searchTerm = '';
+  sortCol = -1;
+  sortDir = 'asc';
+
+  document.getElementById('matched-count').textContent = `จับคู่ได้: ${(result.matched_count || 0).toLocaleString()}`;
+  document.getElementById('unmatched-count').textContent = `จับคู่ไม่ได้: ${(result.unmatched_count || 0).toLocaleString()}`;
+
+  const filename = result.filename || options.filename || document.getElementById('file-name')?.textContent || '-';
+  document.getElementById('file-name').textContent = filename;
+  document.getElementById('file-size').textContent = options.fileSize || '-';
+  document.getElementById('file-rows').textContent = Number(result.total_rows || allData.length || 0).toLocaleString();
+
+  document.getElementById('upload-zone')?.classList.add('hidden');
+  document.getElementById('progress-container')?.classList.add('hidden');
+  document.getElementById('file-info')?.classList.remove('hidden');
+  document.getElementById('preview-section')?.classList.add('hidden');
+  document.getElementById('facility-filter-section')?.classList.add('hidden');
+  document.getElementById('results-section')?.classList.remove('hidden');
+  document.getElementById('btn-new-upload-top')?.classList.remove('hidden');
+
+  const searchInput = document.getElementById('search-input');
+  if (searchInput) searchInput.value = '';
+
+  const rowsSelect = document.getElementById('rows-select');
+  if (rowsSelect) rowsSelect.value = '20';
+
+  renderResultsTable();
+}
+
 /**
  * Transform data
  */
@@ -372,29 +425,7 @@ async function transformData() {
     btn.innerHTML = originalText;
 
     if (result && result.success) {
-      allData = result.data || [];
-      currentColumns = result.columns || [];
-      filteredData = [...allData];
-      currentPage = 1;
-      rowsPerPage = 20;
-      searchTerm = '';
-      sortCol = -1;
-      sortDir = 'asc';
-
-      // Update stats
-      document.getElementById('matched-count').textContent = `จับคู่ได้: ${(result.matched_count || 0).toLocaleString()}`;
-      document.getElementById('unmatched-count').textContent = `จับคู่ไม่ได้: ${(result.unmatched_count || 0).toLocaleString()}`;
-
-      // Hide preview, show results
-      document.getElementById('preview-section').classList.add('hidden');
-      document.getElementById('results-section').classList.remove('hidden');
-
-      // Clear search
-      document.getElementById('search-input').value = '';
-      const rowsSelect = document.getElementById('rows-select');
-      if (rowsSelect) rowsSelect.value = '20';
-
-      renderResultsTable();
+      showResultData(result);
       showToast(`แปลงข้อมูลสำเร็จ ${Number(result.total_rows || allData.length).toLocaleString()} แถว`, 'success');
     } else {
       throw new Error(result?.message || 'Transform failed');
@@ -433,7 +464,10 @@ async function loadHistory() {
     const statusClass = item.status === 'completed' ? 'badge-success' : 'badge-info';
     const statusText = item.status === 'completed' ? 'แปลงสำเร็จ' : 'อัปโหลดแล้ว';
     const action = item.status === 'completed'
-      ? `<button class="btn btn-sm btn-success" onclick="downloadHistoryFile('${escapeHtml(item.file_id)}')">ดาวน์โหลด</button>`
+      ? `<div class="history-actions">
+          <button class="btn btn-sm btn-secondary" onclick='openHistoryDetail(${jsString(item.file_id)})'>ดูรายละเอียด</button>
+          <button class="btn btn-sm btn-success" onclick='downloadHistoryFile(${jsString(item.file_id)})'>ดาวน์โหลด</button>
+        </div>`
       : '-';
 
     return `<tr>
@@ -444,6 +478,27 @@ async function loadHistory() {
       <td>${action}</td>
     </tr>`;
   }).join('');
+}
+
+async function openHistoryDetail(fileId) {
+  showLoading();
+
+  try {
+    const result = await api(`/api/history/${encodeURIComponent(fileId)}`, { method: 'GET' });
+    hideLoading();
+
+    if (!result || !result.success) {
+      throw new Error(result?.message || 'ไม่พบรายละเอียดประวัติ');
+    }
+
+    showSection('upload');
+    showResultData(result);
+    document.getElementById('results-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    showToast('เปิดรายละเอียดประวัติแล้ว', 'success');
+  } catch (error) {
+    hideLoading();
+    showToast(error.message || 'เกิดข้อผิดพลาดในการเปิดรายละเอียด', 'error');
+  }
 }
 
 function downloadHistoryFile(fileId) {
@@ -725,6 +780,7 @@ function resetUpload() {
   const facilitySection = document.getElementById('facility-filter-section');
   const facilityDropdown = document.getElementById('facility-dropdown');
   const facilitySelect = document.getElementById('facility-select');
+  const newUploadTop = document.getElementById('btn-new-upload-top');
 
   zone.classList.remove('hidden');
   fileInfo.classList.add('hidden');
@@ -735,6 +791,7 @@ function resetUpload() {
   if (facilitySection) facilitySection.classList.add('hidden');
   if (facilityDropdown) facilityDropdown.classList.add('hidden');
   if (facilitySelect) facilitySelect.classList.remove('open');
+  if (newUploadTop) newUploadTop.classList.add('hidden');
 
   // Clear file input
   if (fileInput) fileInput.value = '';
