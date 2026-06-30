@@ -120,6 +120,42 @@ function removeToast(id) {
   }, 300);
 }
 
+// ---- SweetAlert-style Dialog ----
+function showSweetAlert(options = {}) {
+  const type = options.type || 'info';
+  const title = options.title || '';
+  const message = options.message || '';
+  const confirmText = options.confirmText || 'ตกลง';
+  const iconMap = {
+    success: `<svg xmlns="http://www.w3.org/2000/svg" width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>`,
+    error: `<svg xmlns="http://www.w3.org/2000/svg" width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>`,
+    warning: `<svg xmlns="http://www.w3.org/2000/svg" width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>`,
+    info: `<svg xmlns="http://www.w3.org/2000/svg" width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>`
+  };
+
+  const existing = document.querySelector('.sweet-alert-overlay');
+  if (existing) existing.remove();
+
+  const overlay = document.createElement('div');
+  overlay.className = 'sweet-alert-overlay';
+  overlay.innerHTML = `
+    <div class="sweet-alert sweet-alert-${type}" role="dialog" aria-modal="true" aria-labelledby="sweet-alert-title">
+      <div class="sweet-alert-icon">${iconMap[type] || iconMap.info}</div>
+      <h3 id="sweet-alert-title">${escapeHtml(title)}</h3>
+      <p>${escapeHtml(message)}</p>
+      <button type="button" class="btn btn-primary sweet-alert-confirm">${escapeHtml(confirmText)}</button>
+    </div>
+  `;
+
+  const close = () => overlay.remove();
+  overlay.addEventListener('click', (event) => {
+    if (event.target === overlay) close();
+  });
+  overlay.querySelector('.sweet-alert-confirm').addEventListener('click', close);
+  document.body.appendChild(overlay);
+  overlay.querySelector('.sweet-alert-confirm').focus();
+}
+
 // ---- Loading Overlay ----
 function showLoading() {
   const overlay = document.getElementById('loading-overlay');

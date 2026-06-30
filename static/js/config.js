@@ -2,6 +2,66 @@
 // Configuration Module - Data Exchange Tools
 // ============================================================
 
+const configTestState = {
+  passed: false,
+  fingerprint: ''
+};
+
+function getConfigFingerprint(data = getConfigFormData()) {
+  return JSON.stringify(data);
+}
+
+function setConfigTestPassed(data) {
+  configTestState.passed = true;
+  configTestState.fingerprint = getConfigFingerprint(data);
+  updateSaveConfigButton();
+}
+
+function resetConfigTestState(message = '') {
+  configTestState.passed = false;
+  configTestState.fingerprint = '';
+  updateSaveConfigButton();
+  if (message) {
+    const statusDiv = document.getElementById('connection-status');
+    if (statusDiv) {
+      statusDiv.classList.remove('hidden');
+      statusDiv.className = 'connection-status warning';
+      statusDiv.innerHTML = `
+        <div class="status-content">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>
+          <span>${escapeHtml(message)}</span>
+        </div>
+      `;
+    }
+  }
+}
+
+function isConfigTestValid(data = getConfigFormData()) {
+  return configTestState.passed && configTestState.fingerprint === getConfigFingerprint(data);
+}
+
+function updateSaveConfigButton() {
+  const saveBtn = document.getElementById('btn-save-config');
+  if (!saveBtn) return;
+  const valid = isConfigTestValid();
+  saveBtn.classList.toggle('btn-needs-test', !valid);
+  saveBtn.title = valid ? '' : 'ต้องทดสอบการเชื่อมต่อให้สำเร็จก่อนบันทึก';
+}
+
+function bindConfigInputWatchers() {
+  document.querySelectorAll('#config-form input').forEach((input) => {
+    if (input.dataset.configWatchBound === 'true') return;
+    input.dataset.configWatchBound = 'true';
+    input.addEventListener('input', () => {
+      if (configTestState.passed) {
+        resetConfigTestState('มีการแก้ไขข้อมูลการเชื่อมต่อ กรุณาทดสอบอีกครั้งก่อนบันทึก');
+      } else {
+        updateSaveConfigButton();
+      }
+    });
+  });
+}
+
 /**
  * Initialize config page - populate form if config exists
  */
@@ -24,6 +84,9 @@ async function initConfigPage() {
     }
   } catch (error) {
     console.error('Failed to load config:', error);
+  } finally {
+    bindConfigInputWatchers();
+    resetConfigTestState();
   }
 }
 
@@ -87,6 +150,7 @@ async function testConnection() {
     });
 
     if (result && result.success) {
+      setConfigTestPassed(data);
       statusDiv.className = 'connection-status success';
       statusDiv.innerHTML = `
         <div class="status-content">
@@ -95,8 +159,15 @@ async function testConnection() {
         </div>
       `;
       showToast('เชื่อมต่อฐานข้อมูลสำเร็จ', 'success');
+      showSweetAlert({
+        type: 'success',
+        title: 'ทดสอบสำเร็จ',
+        message: 'เชื่อมต่อฐานข้อมูลสำเร็จ สามารถบันทึกการตั้งค่าได้แล้ว',
+        confirmText: 'ตกลง'
+      });
     } else {
       const msg = result?.message || 'ไม่สามารถเชื่อมต่อฐานข้อมูลได้';
+      resetConfigTestState();
       statusDiv.className = 'connection-status error';
       statusDiv.innerHTML = `
         <div class="status-content">
@@ -105,8 +176,15 @@ async function testConnection() {
         </div>
       `;
       showToast(msg, 'error');
+      showSweetAlert({
+        type: 'error',
+        title: 'ทดสอบไม่สำเร็จ',
+        message: msg,
+        confirmText: 'ตรวจสอบอีกครั้ง'
+      });
     }
   } catch (error) {
+    resetConfigTestState();
     statusDiv.className = 'connection-status error';
     statusDiv.innerHTML = `
       <div class="status-content">
@@ -115,6 +193,12 @@ async function testConnection() {
       </div>
     `;
     showToast('เกิดข้อผิดพลาดในการทดสอบการเชื่อมต่อ', 'error');
+    showSweetAlert({
+      type: 'error',
+      title: 'ทดสอบไม่สำเร็จ',
+      message: 'เกิดข้อผิดพลาดในการทดสอบการเชื่อมต่อ กรุณาตรวจสอบข้อมูลและเครือข่าย',
+      confirmText: 'ตกลง'
+    });
   }
 }
 
@@ -124,6 +208,20 @@ async function testConnection() {
 async function saveConfig() {
   const data = getConfigFormData();
   if (!validateConfigForm(data)) return;
+  if (!isConfigTestValid(data)) {
+    const message = configTestState.passed
+      ? 'ข้อมูลการเชื่อมต่อถูกแก้ไขหลังทดสอบ กรุณาทดสอบการเชื่อมต่อใหม่ก่อนบันทึก'
+      : 'กรุณากดทดสอบการเชื่อมต่อให้สำเร็จก่อนบันทึกการตั้งค่า';
+    resetConfigTestState(message);
+    showSweetAlert({
+      type: 'warning',
+      title: 'ยังบันทึกไม่ได้',
+      message,
+      confirmText: 'รับทราบ'
+    });
+    showToast(message, 'warning');
+    return;
+  }
 
   showLoading();
 

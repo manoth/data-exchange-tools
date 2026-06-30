@@ -35,7 +35,7 @@ from models import (
 from transform import process_upload, transform_data, export_excel
 
 # กำหนด path
-APP_VERSION = "0.0.6"
+APP_VERSION = "0.0.7"
 UPLOADS_DIR = os.path.join(APP_DIR, "uploads")
 UPDATE_DIR = os.path.join(APP_DIR, "updates")
 UPDATE_MANIFEST = os.path.join(UPDATE_DIR, "manifest.json")

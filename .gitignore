@@ -20,3 +20,5 @@ uploads/*
 !uploads/.gitkeep
 updates/*
 !updates/.gitkeep
+
+DataExchangeTools-client-*.zip
