@@ -1015,6 +1015,10 @@ select option {
   z-index: 210;
 }
 
+.facility-select.open {
+  z-index: 10001;
+}
+
 .facility-select-trigger {
   width: 100%;
   min-height: 46px;
@@ -1051,6 +1055,7 @@ select option {
   border: 1px solid var(--glass-border);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-lg);
+  pointer-events: auto;
 }
 
 .facility-search {
@@ -1085,6 +1090,7 @@ select option {
   font-family: var(--font-th);
   text-align: left;
   cursor: pointer;
+  pointer-events: auto;
 }
 
 .facility-option:hover {
