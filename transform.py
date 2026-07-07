@@ -4,14 +4,35 @@ Transform Module - แปลงข้อมูล Excel
 """
 
 import os
+import json
+import urllib.error
+import urllib.request
+import socket
 from datetime import datetime
 from openpyxl import load_workbook, Workbook
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from database import get_connection
-from config import APP_DIR
+from config import APP_DIR, load_agent_config
 
 # กำหนด path สำหรับไฟล์อัพโหลด
 UPLOADS_DIR = os.path.join(APP_DIR, "uploads")
+CENTRAL_API_URL = os.environ.get("CENTRAL_API_URL", "http://127.0.0.1:3000").rstrip("/")
+APP_PORT = int(os.environ.get("PORT", "8899"))
+
+
+def _get_agent_uid() -> str:
+    return f"data-exchange-tools-{socket.gethostname()}-{APP_PORT}"
+
+
+def _agent_api_headers() -> dict:
+    agent_config = load_agent_config()
+    headers = {
+        "Content-Type": "application/json",
+        "X-Agent-Uid": _get_agent_uid(),
+    }
+    if agent_config.get("api_key"):
+        headers["X-Agent-Key"] = agent_config["api_key"]
+    return headers
 
 
 def _cell_to_text(value) -> str:
@@ -74,6 +95,66 @@ def _extract_facilities(data: list) -> list:
 def _chunks(values: list, size: int = 800):
     for index in range(0, len(values), size):
         yield values[index:index + size]
+
+
+def _normalize_discharge(value) -> str:
+    text = _cell_to_text(value).strip()
+    if text.endswith(".0") and text[:-2].isdigit():
+        text = text[:-2]
+    return text
+
+
+def _lookup_central_death_pids(pids: list) -> dict:
+    """ถาม API กลางว่ามี PID/CID ใดอยู่ในฐานข้อมูลคนตายกลางแล้วบ้าง"""
+    clean_pids = sorted({str(pid).strip() for pid in pids if str(pid).strip()})
+    if not clean_pids or not CENTRAL_API_URL:
+        return {
+            "matched": set(),
+            "available": bool(CENTRAL_API_URL),
+            "message": "" if CENTRAL_API_URL else "ยังไม่ได้กำหนดเส้นทาง API Center",
+        }
+
+    matched = set()
+    failed_batches = 0
+    total_batches = 0
+    last_error = ""
+    for batch in _chunks(clean_pids, 1000):
+        total_batches += 1
+        payload = json.dumps({"pids": batch}).encode("utf-8")
+        request = urllib.request.Request(
+            f"{CENTRAL_API_URL}/api/agents/death-persons/lookup",
+            data=payload,
+            headers=_agent_api_headers(),
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=15) as response:
+                result = json.loads(response.read().decode("utf-8"))
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+            failed_batches += 1
+            last_error = str(exc)
+            continue
+
+        if result.get("ok"):
+            data = result.get("data") or {}
+            for pid in data.get("matchedPids") or []:
+                matched.add(str(pid).strip())
+
+    if total_batches > 0 and failed_batches == total_batches:
+        return {
+            "matched": set(),
+            "available": False,
+            "message": f"ไม่สามารถเชื่อมต่อ API Center เพื่อเทียบข้อมูลการตายกับส่วนกลางได้ ({last_error or 'connection failed'})",
+        }
+
+    message = ""
+    if failed_batches:
+        message = "เทียบข้อมูลการตายกับส่วนกลางได้บางส่วน เนื่องจากบางชุดข้อมูลติดต่อ API Center ไม่สำเร็จ"
+    return {
+        "matched": matched,
+        "available": True,
+        "message": message,
+    }
 
 
 def process_upload(file_path: str) -> dict:
@@ -148,6 +229,8 @@ def transform_data(file_id: str, data: list, columns: list, selected_hoscodes: l
         mother_column = next((col for col in columns if str(col).upper() == "MOTHER"), None)
         has_father_column = father_column is not None
         has_mother_column = mother_column is not None
+        discharge_column = next((col for col in columns if str(col).upper() == "DISCHARGE"), None)
+        cid_column = next((col for col in columns if str(col).upper() == "CID"), None)
         person_columns = ["PERSON_CID", "FULL_NAME"]
 
         selected_hoscodes = [str(code).strip() for code in (selected_hoscodes or []) if str(code).strip()]
@@ -160,6 +243,7 @@ def transform_data(file_id: str, data: list, columns: list, selected_hoscodes: l
                 "PERSON_CID": "",
                 "FULL_NAME": "",
                 "_matched": False,
+                "_central_death_mismatch": False,
             }
             return fields
 
@@ -171,6 +255,7 @@ def transform_data(file_id: str, data: list, columns: list, selected_hoscodes: l
             if mother_column and person.get("mother_name"):
                 target[mother_column] = person.get("mother_name", "")
             target["_matched"] = True
+            target["_central_death_mismatch"] = False
 
         # ค้นหาคอลัมน์ pid (ไม่สนใจตัวพิมพ์เล็ก/ใหญ่)
         pid_column = None
@@ -191,7 +276,11 @@ def transform_data(file_id: str, data: list, columns: list, selected_hoscodes: l
                 "data": transformed_data,
                 "columns": person_columns + columns,
                 "matched_count": 0,
-                "unmatched_count": len(data)
+                "unmatched_count": len(data),
+                "has_discharge": bool(discharge_column),
+                "central_death_mismatch_count": 0,
+                "central_death_lookup_available": True,
+                "central_death_lookup_message": ""
             }
 
         # ดึงค่า pid ทั้งหมดจากข้อมูล โดยเก็บทั้งแบบเดิมและแบบตัดศูนย์นำหน้า
@@ -215,7 +304,11 @@ def transform_data(file_id: str, data: list, columns: list, selected_hoscodes: l
                 "data": transformed_data,
                 "columns": person_columns + columns,
                 "matched_count": 0,
-                "unmatched_count": len(data)
+                "unmatched_count": len(data),
+                "has_discharge": bool(discharge_column),
+                "central_death_mismatch_count": 0,
+                "central_death_lookup_available": True,
+                "central_death_lookup_message": ""
             }
 
         # Query ข้อมูลจากตาราง person แบบ batch เพื่อไม่ให้ IN clause ใหญ่เกินไป
@@ -278,6 +371,7 @@ def transform_data(file_id: str, data: list, columns: list, selected_hoscodes: l
         # แปลงข้อมูล
         matched_count = 0
         unmatched_count = 0
+        central_death_candidates = {}
         transformed_data = []
 
         for row in data:
@@ -301,13 +395,35 @@ def transform_data(file_id: str, data: list, columns: list, selected_hoscodes: l
                 new_row.update(empty_person_fields())
                 unmatched_count += 1
 
+            if discharge_column and _normalize_discharge(row.get(discharge_column, "")) != "1":
+                death_lookup_pid = _cell_to_text(new_row.get("PERSON_CID") or row.get(cid_column or "", ""))
+                if death_lookup_pid:
+                    central_death_candidates.setdefault(death_lookup_pid, []).append(new_row)
+
             transformed_data.append(new_row)
+
+        central_death_mismatch_count = 0
+        central_death_lookup_available = True
+        central_death_lookup_message = ""
+        if central_death_candidates:
+            death_lookup_result = _lookup_central_death_pids(list(central_death_candidates.keys()))
+            matched_death_pids = death_lookup_result.get("matched", set())
+            central_death_lookup_available = bool(death_lookup_result.get("available"))
+            central_death_lookup_message = death_lookup_result.get("message", "")
+            for pid in matched_death_pids:
+                for row in central_death_candidates.get(pid, []):
+                    row["_central_death_mismatch"] = True
+                    central_death_mismatch_count += 1
 
         return {
             "data": transformed_data,
             "columns": person_columns + columns,
             "matched_count": matched_count,
-            "unmatched_count": unmatched_count
+            "unmatched_count": unmatched_count,
+            "has_discharge": bool(discharge_column),
+            "central_death_mismatch_count": central_death_mismatch_count,
+            "central_death_lookup_available": central_death_lookup_available,
+            "central_death_lookup_message": central_death_lookup_message
         }
 
     except Exception as e:

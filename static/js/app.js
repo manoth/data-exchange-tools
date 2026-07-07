@@ -8,8 +8,7 @@ let isRouting = false;
 const routeByPage = {
   login: '/login',
   'admin-password': '/change-admin-password',
-  config: '/config',
-  service: '/service'
+  config: '/config'
 };
 
 const routeBySection = {
@@ -81,13 +80,13 @@ function routeToCurrentPath(replace = false) {
  * Show a page (login, config, dashboard)
  */
 function showPage(pageName, updateRoute = true) {
-  if ((pageName === 'config' || pageName === 'service') && !isAdminSessionReady()) {
+  if (pageName === 'config' && !isAdminSessionReady()) {
     rememberRouteForAfterLogin(routeByPage[pageName] || '/upload');
     prepareAdminLogin();
     return;
   }
 
-  if (!isRouting && updateRoute && (pageName === 'config' || pageName === 'service')) {
+  if (!isRouting && updateRoute && pageName === 'config') {
     rememberReturnRoute(routeByPage[pageName]);
   }
 
@@ -162,6 +161,14 @@ function showSection(sectionName, updateRoute = true) {
   }
 
   // Section-specific initialization
+  if (sectionName === 'upload') {
+    if (typeof resetUpload === 'function') {
+      resetUpload();
+    } else if (typeof setHistoryDetailMode === 'function') {
+      setHistoryDetailMode(false);
+    }
+  }
+
   if (sectionName === 'settings') {
     loadSettingsStatus();
   } else if (sectionName === 'history') {
@@ -199,7 +206,7 @@ async function navigateToRoute(route, replace = false) {
       }
     }
 
-    if ((targetRoute === '/config' || targetRoute === '/service' || targetRoute === '/settings') && !isAdminSessionReady()) {
+    if ((targetRoute === '/config' || targetRoute === '/settings') && !isAdminSessionReady()) {
       showSection('upload', false);
       setRoute('/upload', replace);
       showToast('เมนูนี้จัดการได้เฉพาะ admin', 'warning');
@@ -209,12 +216,6 @@ async function navigateToRoute(route, replace = false) {
     if (targetRoute === '/config') {
       showPage('config', false);
       setRoute('/config', replace);
-      return;
-    }
-
-    if (targetRoute === '/service') {
-      showPage('service', false);
-      setRoute('/service', replace);
       return;
     }
 
@@ -349,6 +350,68 @@ async function loadSettingsStatus() {
   if (typeof checkVersionUpdate === 'function' && isAdminSessionReady()) {
     checkVersionUpdate(true, false);
   }
+
+  loadApiCenterInfo();
+}
+
+async function loadApiCenterInfo() {
+  const fields = {
+    api_center_url: document.getElementById('settings-api-center-url'),
+    agent_uid: document.getElementById('settings-api-agent-uid'),
+    api_key_prefix: document.getElementById('settings-api-key-prefix'),
+    api_key_registered_at: document.getElementById('settings-api-key-registered-at')
+  };
+  const keyStatus = document.getElementById('settings-api-key-status');
+
+  Object.values(fields).forEach(field => {
+    if (field) field.textContent = 'กำลังโหลด...';
+  });
+  setApiKeyStatusBadge(keyStatus, null);
+
+  try {
+    const result = await api('/api/agent/api-center', { method: 'GET' });
+    if (!result || !result.success) {
+      throw new Error(result?.message || 'ไม่สามารถโหลดข้อมูล API Center ได้');
+    }
+
+    Object.entries(fields).forEach(([key, field]) => {
+      if (field) field.textContent = result[key] || '-';
+    });
+    setApiKeyStatusBadge(
+      keyStatus,
+      result.api_key_configured,
+      result.api_center_online,
+      result.api_center_message
+    );
+  } catch (error) {
+    Object.values(fields).forEach(field => {
+      if (field) field.textContent = '-';
+    });
+    setApiKeyStatusBadge(keyStatus, false, false, error.message || 'โหลดสถานะไม่ได้');
+    showToast(error.message || 'ไม่สามารถโหลดข้อมูล API Center ได้', 'warning');
+  }
+}
+
+function setApiKeyStatusBadge(element, isConfigured, apiCenterOnline = null, message = '') {
+  if (!element) return;
+  element.classList.remove('api-key-status-ok', 'api-key-status-error', 'api-key-status-muted');
+  element.removeAttribute('title');
+
+  if (isConfigured === true && apiCenterOnline === true) {
+    element.textContent = 'API Center พร้อมใช้งาน';
+    element.classList.add('api-key-status-ok');
+  } else if (isConfigured === false) {
+    element.textContent = 'ยังไม่มี Agent API Key';
+    element.classList.add('api-key-status-error');
+  } else if (apiCenterOnline === false) {
+    element.textContent = 'API Center ติดต่อไม่ได้';
+    element.classList.add('api-key-status-error');
+  } else {
+    element.textContent = 'กำลังโหลด...';
+    element.classList.add('api-key-status-muted');
+  }
+
+  if (message) element.setAttribute('title', message);
 }
 
 /**

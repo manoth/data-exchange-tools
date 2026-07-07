@@ -28,6 +28,7 @@ CONFIG_FILE = os.path.join(APP_DIR, "config.json")
 KEY_FILE = os.path.join(APP_DIR, ".key")
 JWT_SECRET_FILE = os.path.join(APP_DIR, ".jwt_secret")
 ADMIN_FILE = os.path.join(APP_DIR, "admin.json")
+AGENT_CONFIG_FILE = os.path.join(APP_DIR, "agent.json")
 DEFAULT_ADMIN_USERNAME = "admin"
 DEFAULT_ADMIN_PASSWORD = "admin"
 PBKDF2_ITERATIONS = 260000
@@ -248,6 +249,63 @@ def public_config() -> dict:
         "username": config.get("username", ""),
         "configured": is_configured(),
     }
+
+
+def load_agent_config() -> dict:
+    """โหลดข้อมูล Agent สำหรับเชื่อม API Center โดยถอดรหัส API key เฉพาะฝั่ง server"""
+    if not os.path.exists(AGENT_CONFIG_FILE):
+        return {
+            "api_key": "",
+            "api_key_prefix": "",
+            "registered_at": "",
+            "api_center_url": "",
+        }
+    try:
+        with open(AGENT_CONFIG_FILE, "r", encoding="utf-8") as f:
+            config = json.load(f)
+        if config.get("api_key"):
+            config["api_key"] = _decrypt_password(config["api_key"])
+        return config
+    except Exception:
+        return {
+            "api_key": "",
+            "api_key_prefix": "",
+            "registered_at": "",
+            "api_center_url": "",
+        }
+
+
+def save_agent_api_key(api_key: str, api_key_prefix: str = "", api_center_url: str = "") -> dict:
+    """บันทึก Agent API key แบบเข้ารหัส"""
+    try:
+        os.makedirs(APP_DIR, exist_ok=True)
+        config_to_save = {
+            "api_key": _encrypt_password(api_key),
+            "api_key_prefix": api_key_prefix or api_key[:16],
+            "registered_at": datetime_now_string(),
+            "api_center_url": api_center_url,
+        }
+        with open(AGENT_CONFIG_FILE, "w", encoding="utf-8") as f:
+            json.dump(config_to_save, f, indent=2, ensure_ascii=False)
+        return {"success": True, "message": "บันทึก Agent API key สำเร็จ"}
+    except Exception as e:
+        return {"success": False, "message": f"ไม่สามารถบันทึก Agent API key ได้: {e}"}
+
+
+def public_agent_config() -> dict:
+    """คืนค่า Agent API config ที่ปลอดภัย ไม่ส่ง key จริงไปหน้าเว็บ"""
+    config = load_agent_config()
+    return {
+        "api_key_configured": bool(config.get("api_key")),
+        "api_key_prefix": config.get("api_key_prefix", ""),
+        "registered_at": config.get("registered_at", ""),
+        "api_center_url": config.get("api_center_url", ""),
+    }
+
+
+def datetime_now_string() -> str:
+    from datetime import datetime
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
 def test_connection(config_data: dict) -> dict:

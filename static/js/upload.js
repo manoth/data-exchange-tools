@@ -17,6 +17,38 @@ let selectedHoscodes = [];
 let facilityEventsBound = false;
 let uploadEventsBound = false;
 let isUploading = false;
+let isHistoryDetailMode = false;
+let activeResultFilter = 'all';
+let centralDeathLookupAvailable = true;
+let centralDeathLookupMessage = '';
+
+function setHistoryDetailMode(enabled) {
+  isHistoryDetailMode = Boolean(enabled);
+
+  const uploadSection = document.getElementById('section-upload');
+  const title = document.getElementById('upload-section-title');
+  const backHistoryBtn = document.getElementById('btn-back-history');
+  const newUploadBtn = document.getElementById('btn-new-upload-top');
+  const fileRemoveBtn = document.querySelector('#file-info .btn-danger');
+
+  uploadSection?.classList.toggle('history-detail-mode', isHistoryDetailMode);
+  if (title) title.textContent = isHistoryDetailMode ? 'รายละเอียดประวัติการแปลงข้อมูล' : 'อัปโหลดไฟล์ Exchange';
+  backHistoryBtn?.classList.toggle('hidden', !isHistoryDetailMode);
+  newUploadBtn?.classList.toggle('hidden', isHistoryDetailMode || !currentFileId);
+  fileRemoveBtn?.classList.toggle('hidden', isHistoryDetailMode);
+}
+
+function markHistorySidebarActive() {
+  document.querySelectorAll('.sidebar-item').forEach(item => {
+    item.classList.toggle('active', item.dataset.section === 'history');
+  });
+}
+
+function returnToHistoryList() {
+  setHistoryDetailMode(false);
+  resetResultViewOnly();
+  showSection('history');
+}
 
 /**
  * Initialize upload zone with drag & drop
@@ -358,10 +390,129 @@ function renderFacilityOptions(keyword = '') {
   container.innerHTML = html;
 }
 
+function isTrueFlag(value) {
+  return value === true || value === 'true' || value === 1 || value === '1';
+}
+
+function isRowMatched(row) {
+  return isTrueFlag(row?._matched);
+}
+
+function isCentralDeathMismatch(row) {
+  return isTrueFlag(row?._central_death_mismatch);
+}
+
+function getDisplayColumns() {
+  return currentColumns.filter(c => !String(c).startsWith('_'));
+}
+
+function rowMatchesActiveResultFilter(row) {
+  if (activeResultFilter === 'matched') return isRowMatched(row);
+  if (activeResultFilter === 'unmatched') return !isRowMatched(row);
+  if (activeResultFilter === 'centralDeath') return isCentralDeathMismatch(row);
+  return true;
+}
+
+function rowMatchesSearchTerm(row) {
+  if (!searchTerm) return true;
+  return getDisplayColumns().some(col => {
+    const val = row[col];
+    if (val === null || val === undefined) return false;
+    return String(val).toLowerCase().includes(searchTerm);
+  });
+}
+
+function applyResultFilters(render = true) {
+  filteredData = allData.filter(row => rowMatchesActiveResultFilter(row) && rowMatchesSearchTerm(row));
+  currentPage = 1;
+  if (render) renderResultsTable();
+}
+
+function updateResultFilterCards(result = {}) {
+  if (Object.prototype.hasOwnProperty.call(result, 'central_death_lookup_available')) {
+    centralDeathLookupAvailable = result.central_death_lookup_available !== false;
+  } else {
+    centralDeathLookupAvailable = true;
+  }
+  centralDeathLookupMessage = result.central_death_lookup_message || '';
+
+  const counts = {
+    all: allData.length,
+    matched: allData.filter(isRowMatched).length,
+    unmatched: allData.filter(row => !isRowMatched(row)).length,
+    centralDeath: allData.filter(isCentralDeathMismatch).length
+  };
+
+  const allCount = document.getElementById('filter-count-all');
+  const matchedCount = document.getElementById('filter-count-matched');
+  const unmatchedCount = document.getElementById('filter-count-unmatched');
+  const centralDeathCount = document.getElementById('filter-count-central-death');
+  if (allCount) allCount.textContent = counts.all.toLocaleString();
+  if (matchedCount) matchedCount.textContent = counts.matched.toLocaleString();
+  if (unmatchedCount) unmatchedCount.textContent = counts.unmatched.toLocaleString();
+  if (centralDeathCount) {
+    centralDeathCount.textContent = Number(result.central_death_mismatch_count ?? counts.centralDeath).toLocaleString();
+  }
+
+  const centralCard = document.getElementById('filter-card-central-death');
+  const hasDischarge = Boolean(result.has_discharge);
+  const centralDesc = centralCard?.querySelector('.result-filter-desc');
+  if (centralDeathCount && hasDischarge && !centralDeathLookupAvailable) {
+    centralDeathCount.textContent = 'ใช้ไม่ได้';
+  }
+  centralCard?.classList.toggle('hidden', !hasDischarge);
+  centralCard?.classList.toggle('result-filter-card-unavailable', hasDischarge && !centralDeathLookupAvailable);
+  if (centralCard && hasDischarge) {
+    centralCard.setAttribute(
+      'title',
+      centralDeathLookupAvailable
+        ? 'กรองรายการที่ DISCHARGE ไม่ใช่ 1 แต่พบ CID ในฐานคนตายกลาง'
+        : (centralDeathLookupMessage || 'ไม่สามารถเชื่อมต่อ API Center เพื่อเทียบข้อมูลการตายกับส่วนกลางได้')
+    );
+  }
+  if (centralDesc) {
+    centralDesc.textContent = centralDeathLookupAvailable
+      ? 'DISCHARGE ไม่ใช่ 1 แต่พบ CID ในฐานคนตายกลาง'
+      : 'ไม่สามารถเชื่อมต่อ API Center เพื่อเทียบข้อมูลนี้';
+  }
+  if (!hasDischarge && activeResultFilter === 'centralDeath') {
+    activeResultFilter = 'all';
+  } else if (!centralDeathLookupAvailable && activeResultFilter === 'centralDeath') {
+    activeResultFilter = 'all';
+  }
+
+  document.querySelectorAll('.result-filter-card').forEach(card => {
+    card.classList.toggle('active', card.dataset.filter === activeResultFilter);
+  });
+}
+
+function setResultFilter(filterName) {
+  if (filterName === 'centralDeath' && !centralDeathLookupAvailable) {
+    showSweetAlert({
+      type: 'warning',
+      title: 'ยังเทียบข้อมูลการตายกับส่วนกลางไม่ได้',
+      message: centralDeathLookupMessage || 'ไม่สามารถเชื่อมต่อ API Center ได้ อาจเกิดจาก internet ขาดการเชื่อมต่อ หรือ API Center ไม่พร้อมใช้งาน ระบบยังสามารถแปลงข้อมูลและดูประวัติได้ตามปกติ ยกเว้นการเทียบฐานคนตายกลาง',
+      confirmText: 'เข้าใจแล้ว'
+    });
+    return;
+  }
+
+  activeResultFilter = filterName;
+  updateResultFilterCards({
+    has_discharge: !document.getElementById('filter-card-central-death')?.classList.contains('hidden'),
+    central_death_lookup_available: centralDeathLookupAvailable,
+    central_death_lookup_message: centralDeathLookupMessage
+  });
+  applyResultFilters(true);
+}
+
 function showResultData(result, options = {}) {
+  setHistoryDetailMode(Boolean(options.historyDetail));
+
   currentFileId = result.file_id || currentFileId;
   allData = result.data || [];
   currentColumns = result.columns || [];
+  activeResultFilter = 'all';
   filteredData = [...allData];
   currentPage = 1;
   rowsPerPage = 20;
@@ -383,7 +534,8 @@ function showResultData(result, options = {}) {
   document.getElementById('preview-section')?.classList.add('hidden');
   document.getElementById('facility-filter-section')?.classList.add('hidden');
   document.getElementById('results-section')?.classList.remove('hidden');
-  document.getElementById('btn-new-upload-top')?.classList.remove('hidden');
+  document.getElementById('btn-new-upload-top')?.classList.toggle('hidden', Boolean(options.historyDetail));
+  document.querySelector('#file-info .btn-danger')?.classList.toggle('hidden', Boolean(options.historyDetail));
 
   const searchInput = document.getElementById('search-input');
   if (searchInput) searchInput.value = '';
@@ -391,6 +543,8 @@ function showResultData(result, options = {}) {
   const rowsSelect = document.getElementById('rows-select');
   if (rowsSelect) rowsSelect.value = '20';
 
+  updateResultFilterCards(result);
+  applyResultFilters(false);
   renderResultsTable();
 }
 
@@ -465,14 +619,18 @@ async function loadHistory() {
     const statusText = item.status === 'completed' ? 'แปลงสำเร็จ' : 'อัปโหลดแล้ว';
     const action = item.status === 'completed'
       ? `<div class="history-actions">
-          <button class="btn btn-sm btn-secondary" onclick='openHistoryDetail(${jsString(item.file_id)})'>ดูรายละเอียด</button>
-          <button class="btn btn-sm btn-success" onclick='downloadHistoryFile(${jsString(item.file_id)})'>ดาวน์โหลด</button>
+          <button class="btn history-icon-btn history-detail-btn" onclick='openHistoryDetail(${jsString(item.file_id)})' title="ดูรายละเอียด" aria-label="ดูรายละเอียด">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+          </button>
+          <button class="btn history-icon-btn history-download-btn" onclick='downloadHistoryFile(${jsString(item.file_id)})' title="ดาวน์โหลด" aria-label="ดาวน์โหลด">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
+          </button>
         </div>`
       : '-';
 
     return `<tr>
       <td>${escapeHtml(item.original_filename || '-')}</td>
-      <td>${escapeHtml(item.upload_time || '-')}</td>
+      <td>${escapeHtml(formatDate(item.upload_time))}</td>
       <td>${Number(item.total_rows || 0).toLocaleString()}</td>
       <td><span class="badge ${statusClass}">${statusText}</span></td>
       <td>${action}</td>
@@ -491,9 +649,11 @@ async function openHistoryDetail(fileId) {
       throw new Error(result?.message || 'ไม่พบรายละเอียดประวัติ');
     }
 
-    showSection('upload');
-    showResultData(result);
-    document.getElementById('results-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    showSection('upload', false);
+    showResultData(result, { historyDetail: true });
+    markHistorySidebarActive();
+    if (typeof setRoute === 'function') setRoute('/history', true);
+    document.getElementById('section-upload')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     showToast('เปิดรายละเอียดประวัติแล้ว', 'success');
   } catch (error) {
     hideLoading();
@@ -514,7 +674,7 @@ function renderResultsTable() {
   const tbody = document.getElementById('results-tbody');
 
   // Filter columns (exclude internal fields starting with _)
-  const displayColumns = currentColumns.filter(c => !c.startsWith('_'));
+  const displayColumns = getDisplayColumns();
 
   // Build header with sort indicators
   let headerHtml = '<tr>';
@@ -547,8 +707,9 @@ function renderResultsTable() {
     </td></tr>`;
   } else {
     pageData.forEach(row => {
-      const isUnmatched = row._matched === false;
-      bodyHtml += `<tr class="${isUnmatched ? 'unmatched' : ''}">`;
+      const isUnmatched = !isRowMatched(row);
+      const isCentralDeath = isCentralDeathMismatch(row);
+      bodyHtml += `<tr class="${isUnmatched ? 'unmatched' : ''}${isCentralDeath ? ' central-death-mismatch' : ''}">`;
       displayColumns.forEach(col => {
         const value = row[col] !== null && row[col] !== undefined ? row[col] : '';
         bodyHtml += `<td>${escapeHtml(String(value))}</td>`;
@@ -573,22 +734,7 @@ function renderDataTableInfo() {
  */
 const handleSearch = debounce(function (value) {
   searchTerm = value.toLowerCase().trim();
-
-  if (!searchTerm) {
-    filteredData = [...allData];
-  } else {
-    const displayColumns = currentColumns.filter(c => !c.startsWith('_'));
-    filteredData = allData.filter(row => {
-      return displayColumns.some(col => {
-        const val = row[col];
-        if (val === null || val === undefined) return false;
-        return String(val).toLowerCase().includes(searchTerm);
-      });
-    });
-  }
-
-  currentPage = 1;
-  renderResultsTable();
+  applyResultFilters(true);
 }, 300);
 
 /**
@@ -611,7 +757,7 @@ function handleSort(colIndex) {
     sortDir = 'asc';
   }
 
-  const displayColumns = currentColumns.filter(c => !c.startsWith('_'));
+  const displayColumns = getDisplayColumns();
   const colName = displayColumns[colIndex];
 
   filteredData.sort((a, b) => {
@@ -756,7 +902,29 @@ async function exportExcel() {
 /**
  * Reset upload - clear everything for new upload
  */
+function resetResultViewOnly() {
+  const fileInfo = document.getElementById('file-info');
+  const resultsSection = document.getElementById('results-section');
+  const newUploadTop = document.getElementById('btn-new-upload-top');
+  const backHistoryBtn = document.getElementById('btn-back-history');
+  const fileRemoveBtn = document.querySelector('#file-info .btn-danger');
+
+  fileInfo?.classList.add('hidden');
+  resultsSection?.classList.add('hidden');
+  newUploadTop?.classList.add('hidden');
+  backHistoryBtn?.classList.add('hidden');
+  fileRemoveBtn?.classList.remove('hidden');
+
+  const searchInput = document.getElementById('search-input');
+  if (searchInput) searchInput.value = '';
+  document.getElementById('results-thead').innerHTML = '';
+  document.getElementById('results-tbody').innerHTML = '';
+  document.getElementById('pagination').innerHTML = '';
+}
+
 function resetUpload() {
+  setHistoryDetailMode(false);
+
   currentFileId = null;
   allData = [];
   filteredData = [];
@@ -768,6 +936,7 @@ function resetUpload() {
   sortCol = -1;
   sortDir = 'asc';
   searchTerm = '';
+  activeResultFilter = 'all';
 
   // Reset UI
   const zone = document.getElementById('upload-zone');

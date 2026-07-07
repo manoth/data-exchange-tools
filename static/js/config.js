@@ -275,53 +275,6 @@ async function checkConfigStatus() {
 }
 
 /**
- * Shutdown local web service. Admin only.
- */
-async function shutdownService() {
-  const confirmed = window.confirm('ยืนยันปิด service? ผู้ใช้ทุกคนจะเข้าเว็บไม่ได้จนกว่าจะเปิดโปรแกรมใหม่');
-  if (!confirmed) return;
-
-  const statusDiv = document.getElementById('service-status');
-  if (statusDiv) {
-    statusDiv.className = 'connection-status testing';
-    statusDiv.innerHTML = `
-      <div class="status-content">
-        <div class="spinner" style="width:20px;height:20px;"></div>
-        <span>กำลังส่งคำสั่งปิด service...</span>
-      </div>
-    `;
-  }
-
-  try {
-    const result = await api('/api/admin/shutdown', { method: 'POST' });
-    if (result && result.success) {
-      removeToken();
-      removeUserData();
-      if (statusDiv) {
-        statusDiv.className = 'connection-status success';
-        statusDiv.innerHTML = `
-          <div class="status-content">
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
-            <span>ส่งคำสั่งปิด service แล้ว สามารถปิดหน้าต่างนี้ได้</span>
-          </div>
-        `;
-      }
-    } else {
-      showToast(result?.message || 'ไม่สามารถปิด service ได้', 'error');
-    }
-  } catch {
-    if (statusDiv) {
-      statusDiv.className = 'connection-status success';
-      statusDiv.innerHTML = `
-        <div class="status-content">
-          <span>service ถูกปิดแล้ว</span>
-        </div>
-      `;
-    }
-  }
-}
-
-/**
  * Check online/local update manifest. Admin only.
  */
 async function checkVersionUpdate(force = true, silent = false) {

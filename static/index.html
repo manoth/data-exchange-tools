@@ -7,7 +7,7 @@
   <title>Data Exchange Tools</title>
   <link rel="icon" href="/static/images/favicon.ico">
   <link rel="apple-touch-icon" href="/static/images/logo.png">
-  <link rel="stylesheet" href="/static/css/style.css?v=0.0.9">
+  <link rel="stylesheet" href="/static/css/style.css?v=0.1.0">
 </head>
 <body>
 
@@ -219,42 +219,6 @@
 </div>
 
 <!-- ============================================================
-     SERVICE CONTROL PAGE
-     ============================================================ -->
-<div id="page-service" class="page hidden">
-  <div class="login-wrapper">
-    <div class="config-card glass-card animate-fadeIn">
-      <button class="config-back-btn btn btn-link" onclick="returnFromConfig()">
-        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>
-        กลับ
-      </button>
-
-      <div class="config-header">
-        <span class="config-icon">
-          <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" x2="12" y1="2" y2="12"/></svg>
-        </span>
-        <h1 class="config-title">จัดการ service</h1>
-        <p class="config-subtitle">เฉพาะผู้ดูแลระบบเท่านั้น ใช้เมื่อต้องการหยุดให้บริการเว็บแอป</p>
-      </div>
-
-      <div id="service-status" class="connection-status warning">
-        <div class="status-content">
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg>
-          <span>หากปิด service ผู้ใช้ทุกคนจะเข้าเว็บไม่ได้จนกว่าจะเปิดโปรแกรมใหม่</span>
-        </div>
-      </div>
-
-      <div class="config-actions">
-        <button type="button" class="btn btn-danger btn-block btn-lg" onclick="shutdownService()">
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" x2="12" y1="2" y2="12"/></svg>
-          ปิด service
-        </button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- ============================================================
      DASHBOARD PAGE
      ============================================================ -->
 <div id="page-dashboard" class="page hidden">
@@ -276,9 +240,6 @@
         </div>
         <button class="btn btn-icon admin-only hidden" onclick="showSection('settings')" title="ตั้งค่า">
           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
-        </button>
-        <button class="btn btn-icon btn-danger admin-only hidden" onclick="shutdownService()" title="ปิด service">
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" x2="12" y1="2" y2="12"/></svg>
         </button>
         <button class="btn btn-icon" onclick="logout()" title="ออกจากระบบ">
           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>
@@ -315,7 +276,7 @@
         </button>
       </div>
       <div class="sidebar-footer">
-        <span class="version-text">v0.0.9</span>
+        <span class="version-text">v0.1.0</span>
       </div>
     </aside>
 
@@ -329,8 +290,12 @@
             <span class="section-icon">
               <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 13v8"/><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="m8 17 4-4 4 4"/></svg>
             </span>
-            <h2>อัปโหลดไฟล์ Exchange</h2>
+            <h2 id="upload-section-title">อัปโหลดไฟล์ Exchange</h2>
           </div>
+          <button class="btn btn-secondary hidden" id="btn-back-history" onclick="returnToHistoryList()">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>
+            กลับหน้าประวัติ
+          </button>
           <button class="btn btn-secondary hidden" id="btn-new-upload-top" onclick="resetUpload()">
             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 13v8"/><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="m8 17 4-4 4 4"/></svg>
             อัปโหลดไฟล์ใหม่
@@ -424,6 +389,29 @@
             </div>
           </div>
 
+          <div class="result-filter-cards" id="result-filter-cards">
+            <button type="button" class="result-filter-card active" data-filter="all" onclick="setResultFilter('all')">
+              <span class="result-filter-title">ทั้งหมด</span>
+              <strong id="filter-count-all">0</strong>
+              <span class="result-filter-desc">ข้อมูลทั้งหมดหลังแปลง</span>
+            </button>
+            <button type="button" class="result-filter-card" data-filter="matched" onclick="setResultFilter('matched')">
+              <span class="result-filter-title">จับคู่ข้อมูลได้</span>
+              <strong id="filter-count-matched">0</strong>
+              <span class="result-filter-desc">มีข้อมูลใน HIS</span>
+            </button>
+            <button type="button" class="result-filter-card" data-filter="unmatched" onclick="setResultFilter('unmatched')">
+              <span class="result-filter-title">จับคู่ข้อมูลไม่ได้</span>
+              <strong id="filter-count-unmatched">0</strong>
+              <span class="result-filter-desc">ไม่พบข้อมูลใน HIS</span>
+            </button>
+            <button type="button" class="result-filter-card result-filter-card-warning hidden" data-filter="centralDeath" id="filter-card-central-death" onclick="setResultFilter('centralDeath')">
+              <span class="result-filter-title">เทียบข้อมูลการตายกับส่วนกลาง</span>
+              <strong id="filter-count-central-death">0</strong>
+              <span class="result-filter-desc">DISCHARGE ไม่ใช่ 1 แต่พบ CID ในฐานคนตายกลาง</span>
+            </button>
+          </div>
+
           <div class="controls-bar">
             <div class="controls-primary-row">
               <div class="search-wrapper">
@@ -469,7 +457,7 @@
           <h2>ประวัติการแปลงข้อมูล</h2>
         </div>
         <div class="table-container table-responsive">
-          <table class="data-table">
+          <table class="data-table history-table">
             <thead>
               <tr>
                 <th>ไฟล์</th>
@@ -505,17 +493,42 @@
         </div>
         <div class="glass-card">
           <h3>การเชื่อมต่อฐานข้อมูล</h3>
-          <p class="text-secondary" style="margin-top: 8px; margin-bottom: 16px;">จัดการการเชื่อมต่อฐานข้อมูลและ service สำหรับผู้ดูแลระบบ</p>
+          <p class="text-secondary" style="margin-top: 8px; margin-bottom: 16px;">จัดการการเชื่อมต่อฐานข้อมูล HIS/HosXP สำหรับผู้ดูแลระบบ</p>
           <div id="settings-db-status" class="connection-status"></div>
           <div style="margin-top: 16px;">
             <button class="btn btn-secondary" onclick="showPage('config')">
               <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
               จัดการการเชื่อมต่อ
             </button>
-            <button class="btn btn-danger" style="margin-left: 12px;" onclick="shutdownService()">
-              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" x2="12" y1="2" y2="12"/></svg>
-              ปิด service
-            </button>
+          </div>
+        </div>
+        <div class="glass-card" style="margin-top: 18px;">
+          <div class="readonly-api-panel readonly-api-panel-standalone" id="settings-api-center-panel">
+            <div class="readonly-api-header">
+              <div>
+                <h4>เส้นทางการเชื่อมต่อ API Center</h4>
+                <p class="text-secondary" style="margin-top: 6px;">ข้อมูลสำหรับตรวจสอบเส้นทางที่ Agent ใช้สื่อสารกับ API Center</p>
+              </div>
+              <span id="settings-api-key-status" class="api-key-status-badge api-key-status-muted">กำลังโหลด...</span>
+            </div>
+            <div class="readonly-api-grid">
+              <div class="readonly-api-item">
+                <span>API Center URL</span>
+                <code id="settings-api-center-url">-</code>
+              </div>
+              <div class="readonly-api-item">
+                <span>รหัส Agent</span>
+                <code id="settings-api-agent-uid">-</code>
+              </div>
+              <div class="readonly-api-item">
+                <span>Key Prefix</span>
+                <code id="settings-api-key-prefix">-</code>
+              </div>
+              <div class="readonly-api-item">
+                <span>ออก key เมื่อ</span>
+                <code id="settings-api-key-registered-at">-</code>
+              </div>
+            </div>
           </div>
         </div>
         <div class="glass-card" style="margin-top: 18px;">
@@ -558,10 +571,10 @@
 </div>
 
 <!-- Scripts -->
-<script src="/static/js/utils.js?v=0.0.9"></script>
-<script src="/static/js/auth.js?v=0.0.9"></script>
-<script src="/static/js/config.js?v=0.0.9"></script>
-<script src="/static/js/upload.js?v=0.0.9"></script>
-<script src="/static/js/app.js?v=0.0.9"></script>
+<script src="/static/js/utils.js?v=0.1.0"></script>
+<script src="/static/js/auth.js?v=0.1.0"></script>
+<script src="/static/js/config.js?v=0.1.0"></script>
+<script src="/static/js/upload.js?v=0.1.0"></script>
+<script src="/static/js/app.js?v=0.1.0"></script>
 </body>
 </html>

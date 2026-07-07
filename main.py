@@ -26,7 +26,8 @@ from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 
 from config import (
     APP_DIR, load_config, save_config, test_connection, is_configured,
-    public_config, authenticate_admin, change_admin_password
+    public_config, authenticate_admin, change_admin_password,
+    load_agent_config, save_agent_api_key, public_agent_config
 )
 from auth import authenticate_user, create_token, verify_token
 from models import (
@@ -35,13 +36,17 @@ from models import (
     HistoryItem, ApiResponse
 )
 from transform import process_upload, transform_data, export_excel
+from database import get_connection
 
 # กำหนด path
-APP_VERSION = "0.0.9"
+APP_VERSION = "0.1.0"
 APP_HOST = os.environ.get("APP_HOST", "0.0.0.0")
 APP_PORT = int(os.environ.get("PORT", "8899"))
 APP_URL = os.environ.get("APP_URL", f"http://localhost:{APP_PORT}")
 SERVICE_MODE = "--service" in sys.argv or os.environ.get("DATA_EXCHANGE_SERVICE_MODE", "").strip().lower() in ("1", "true", "yes")
+CENTRAL_API_URL = os.environ.get("CENTRAL_API_URL", "https://apicpho.moph.go.th").rstrip("/")
+CENTRAL_API_ENROLLMENT_TOKEN = os.environ.get("CENTRAL_API_ENROLLMENT_TOKEN", "data-exchange-agent-enroll-dev-token")
+AGENT_HEARTBEAT_INTERVAL_SECONDS = int(os.environ.get("AGENT_HEARTBEAT_INTERVAL_SECONDS", "30"))
 UPLOADS_DIR = os.path.join(APP_DIR, "uploads")
 UPDATE_DIR = os.path.join(APP_DIR, "updates")
 UPDATE_MANIFEST = os.path.join(UPDATE_DIR, "manifest.json")
@@ -76,6 +81,14 @@ startup_update_state = {
     "to_version": "",
 }
 startup_update_lock = threading.Lock()
+agent_heartbeat_state = {
+    "running": False,
+    "last_success": None,
+    "last_error": "",
+    "facility_code": "",
+    "facility_name": "",
+}
+agent_heartbeat_lock = threading.Lock()
 
 # ────────────────────────────────────────────
 # Startup Event
@@ -90,6 +103,301 @@ async def startup_event():
         os.makedirs(STATIC_OVERRIDE_DIR, exist_ok=True)
     _ensure_windows_client_integration()
     _start_startup_auto_update()
+    _start_agent_heartbeat()
+
+
+def _get_agent_uid() -> str:
+    return f"data-exchange-tools-{socket.gethostname()}-{APP_PORT}"
+
+
+def _read_hospital_info_from_his() -> dict:
+    """Read local facility identity from HosXP opdconfig."""
+    if not is_configured():
+        return {
+            "db_status": "unknown",
+            "facility_code": "",
+            "facility_name": "",
+            "error": "ยังไม่ได้ตั้งค่าฐานข้อมูล HIS",
+        }
+
+    connection = None
+    try:
+        connection = get_connection()
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT hospitalcode, hospitalname
+                FROM opdconfig
+                WHERE hospitalcode IS NOT NULL OR hospitalname IS NOT NULL
+                LIMIT 1
+                """
+            )
+            row = cursor.fetchone() or {}
+        return {
+            "db_status": "ok",
+            "facility_code": str(row.get("hospitalcode") or "").strip(),
+            "facility_name": str(row.get("hospitalname") or "").strip(),
+            "error": "",
+        }
+    except Exception as exc:
+        return {
+            "db_status": "failed",
+            "facility_code": "",
+            "facility_name": "",
+            "error": str(exc),
+        }
+    finally:
+        if connection:
+            try:
+                connection.close()
+            except Exception:
+                pass
+
+
+def _send_agent_heartbeat() -> dict:
+    _ensure_agent_api_key()
+    hospital = _read_hospital_info_from_his()
+    payload = {
+        "agentUid": _get_agent_uid(),
+        "facilityCode": hospital["facility_code"],
+        "facilityName": hospital["facility_name"],
+        "machineName": socket.gethostname(),
+        "appVersion": APP_VERSION,
+        "frontendVersion": _get_installed_web_version(),
+        "dbStatus": hospital["db_status"],
+        "status": "online",
+        "payload": {
+            "agentUrl": APP_URL,
+            "appPort": APP_PORT,
+            "serviceMode": SERVICE_MODE,
+            "hospitalcode": hospital["facility_code"],
+            "hospitalname": hospital["facility_name"],
+            "hisError": hospital["error"],
+        },
+    }
+    request = urllib.request.Request(
+        f"{CENTRAL_API_URL}/api/agents/heartbeat",
+        data=json.dumps(payload).encode("utf-8"),
+        headers=_agent_api_headers(),
+        method="POST",
+    )
+    with urllib.request.urlopen(request, timeout=8) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def _central_api_json(path: str, method: str = "GET", payload: dict = None) -> dict:
+    _ensure_agent_api_key()
+    data = None
+    headers = _agent_api_headers()
+    if payload is not None:
+        data = json.dumps(payload).encode("utf-8")
+    request = urllib.request.Request(
+        f"{CENTRAL_API_URL}{path}",
+        data=data,
+        headers=headers,
+        method=method,
+    )
+    with urllib.request.urlopen(request, timeout=10) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def _check_central_api_health() -> dict:
+    request = urllib.request.Request(
+        f"{CENTRAL_API_URL}/api/health",
+        headers={"Accept": "application/json"},
+        method="GET",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=5) as response:
+            result = json.loads(response.read().decode("utf-8"))
+        if result.get("ok"):
+            return {"online": True, "message": "API Center พร้อมใช้งาน"}
+        return {"online": False, "message": result.get("message") or "API Center ตอบกลับไม่สมบูรณ์"}
+    except Exception as exc:
+        return {"online": False, "message": f"ไม่สามารถเชื่อมต่อ API Center ได้: {exc}"}
+
+
+def _agent_api_headers() -> dict:
+    agent_config = load_agent_config()
+    headers = {
+        "Content-Type": "application/json",
+        "X-Agent-Uid": _get_agent_uid(),
+    }
+    if agent_config.get("api_key"):
+        headers["X-Agent-Key"] = agent_config["api_key"]
+    return headers
+
+
+def _ensure_agent_api_key() -> dict:
+    agent_config = load_agent_config()
+    if agent_config.get("api_key"):
+        return {
+            "configured": True,
+            "api_key_prefix": agent_config.get("api_key_prefix", ""),
+        }
+
+    hospital = _read_hospital_info_from_his()
+    payload = {
+        "agentUid": _get_agent_uid(),
+        "facilityCode": hospital["facility_code"],
+        "facilityName": hospital["facility_name"],
+        "machineName": socket.gethostname(),
+        "appVersion": APP_VERSION,
+        "frontendVersion": _get_installed_web_version(),
+        "dbStatus": hospital["db_status"],
+    }
+    request = urllib.request.Request(
+        f"{CENTRAL_API_URL}/api/agents/register",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "X-Agent-Enrollment-Token": CENTRAL_API_ENROLLMENT_TOKEN,
+        },
+        method="POST",
+    )
+    with urllib.request.urlopen(request, timeout=10) as response:
+        result = json.loads(response.read().decode("utf-8"))
+
+    data = result.get("data") or {}
+    api_key = data.get("apiKey")
+    api_key_prefix = data.get("apiKeyPrefix") or ""
+    if not api_key:
+        raise RuntimeError("API Center ไม่ได้ส่ง Agent API key กลับมา กรุณา rotate key จาก Control แล้วตั้งค่าใหม่")
+
+    save_result = save_agent_api_key(api_key, api_key_prefix, CENTRAL_API_URL)
+    if not save_result.get("success"):
+        raise RuntimeError(save_result.get("message") or "บันทึก Agent API key ไม่สำเร็จ")
+
+    return {
+        "configured": True,
+        "api_key_prefix": api_key_prefix,
+    }
+
+
+def _execute_agent_command(command: dict) -> tuple:
+    command_type = command.get("commandType") or command.get("command_type") or ""
+    payload = command.get("payload") or {}
+    hospital = _read_hospital_info_from_his()
+
+    if command_type == "health_check":
+        return True, {
+            "message": "agent พร้อมใช้งาน",
+            "agentUid": _get_agent_uid(),
+            "machineName": socket.gethostname(),
+            "appUrl": APP_URL,
+            "serviceMode": SERVICE_MODE,
+            "dbStatus": hospital["db_status"],
+        }
+
+    if command_type == "db_check":
+        return hospital["db_status"] == "ok", {
+            "message": "เชื่อมต่อฐานข้อมูล HIS สำเร็จ" if hospital["db_status"] == "ok" else "เชื่อมต่อฐานข้อมูล HIS ไม่สำเร็จ",
+            "dbStatus": hospital["db_status"],
+            "error": hospital["error"],
+        }
+
+    if command_type == "version_check":
+        return True, {
+            "message": "ตรวจสอบเวอร์ชันสำเร็จ",
+            "appVersion": APP_VERSION,
+            "frontendVersion": _get_installed_web_version(),
+        }
+
+    if command_type == "refresh_opdconfig":
+        return hospital["db_status"] == "ok", {
+            "message": "อ่านข้อมูลหน่วยบริการจาก opdconfig สำเร็จ" if hospital["db_status"] == "ok" else "อ่านข้อมูลหน่วยบริการไม่สำเร็จ",
+            "hospitalcode": hospital["facility_code"],
+            "hospitalname": hospital["facility_name"],
+            "error": hospital["error"],
+        }
+
+    if command_type == "check_update":
+        update_info = _get_update_status(force=True)
+        return True, {
+            "message": "ตรวจสอบ update สำเร็จ",
+            "update": update_info,
+        }
+
+    if command_type == "send_latest_log":
+        lines = int(payload.get("lines", 100) or 100) if isinstance(payload, dict) else 100
+        log_path = os.path.join(UPDATE_DIR, "update.log")
+        content = ""
+        if os.path.exists(log_path):
+            with open(log_path, "r", encoding="utf-8", errors="ignore") as log_file:
+                content = "".join(log_file.readlines()[-lines:])
+        return True, {
+            "message": "ส่ง log ล่าสุดสำเร็จ",
+            "logPath": log_path,
+            "content": content,
+        }
+
+    if command_type == "restart_service":
+        return True, {
+            "message": "รับคำสั่ง restart แล้ว แต่โหมด dev ยังไม่ restart อัตโนมัติ",
+            "payload": payload,
+        }
+
+    return False, {
+        "message": f"ไม่รู้จักคำสั่ง: {command_type}",
+        "payload": payload,
+    }
+
+
+def _pull_and_execute_agent_commands():
+    encoded_uid = urllib.parse.quote(_get_agent_uid(), safe="")
+    response = _central_api_json(f"/api/agents/uid/{encoded_uid}/commands/pull")
+    commands = response.get("data") or []
+    for command in commands:
+        command_id = command.get("id")
+        try:
+            success, result = _execute_agent_command(command)
+            _central_api_json(
+                f"/api/agents/commands/{command_id}/result",
+                method="POST",
+                payload={
+                    "status": "success" if success else "failed",
+                    "result": result,
+                },
+            )
+        except Exception as exc:
+            if command_id:
+                _central_api_json(
+                    f"/api/agents/commands/{command_id}/result",
+                    method="POST",
+                    payload={
+                        "status": "failed",
+                        "result": {"message": str(exc)},
+                    },
+                )
+
+
+def _agent_heartbeat_worker():
+    while True:
+        try:
+            _send_agent_heartbeat()
+            _pull_and_execute_agent_commands()
+            hospital = _read_hospital_info_from_his()
+            with agent_heartbeat_lock:
+                agent_heartbeat_state.update({
+                    "last_success": datetime.now().isoformat(timespec="seconds"),
+                    "last_error": "",
+                    "facility_code": hospital["facility_code"],
+                    "facility_name": hospital["facility_name"],
+                })
+        except Exception as exc:
+            with agent_heartbeat_lock:
+                agent_heartbeat_state["last_error"] = str(exc)
+        time.sleep(max(10, AGENT_HEARTBEAT_INTERVAL_SECONDS))
+
+
+def _start_agent_heartbeat():
+    if not CENTRAL_API_URL:
+        return
+    with agent_heartbeat_lock:
+        if agent_heartbeat_state["running"]:
+            return
+        agent_heartbeat_state["running"] = True
+    threading.Thread(target=_agent_heartbeat_worker, daemon=True).start()
 
 
 # ────────────────────────────────────────────
@@ -874,6 +1182,26 @@ async def config_get(current_admin: dict = Depends(get_current_admin)):
     return {"success": True, "config": public_config()}
 
 
+@app.get("/api/agent/api-center")
+async def agent_api_center_info(current_admin: dict = Depends(get_current_admin)):
+    """แสดงข้อมูลเส้นทาง API Center ที่ Agent ใช้งานแบบอ่านอย่างเดียว"""
+    agent_config = public_agent_config()
+    api_health = _check_central_api_health()
+    return {
+        "success": True,
+        "api_center_url": CENTRAL_API_URL,
+        "heartbeat_endpoint": f"{CENTRAL_API_URL}/api/agents/heartbeat",
+        "death_lookup_endpoint": f"{CENTRAL_API_URL}/api/agents/death-persons/lookup",
+        "agent_uid": _get_agent_uid(),
+        "api_key_configured": agent_config["api_key_configured"],
+        "api_key_prefix": agent_config["api_key_prefix"],
+        "api_key_registered_at": agent_config["registered_at"],
+        "api_center_online": api_health["online"],
+        "api_center_message": api_health["message"],
+        "heartbeat_interval_seconds": AGENT_HEARTBEAT_INTERVAL_SECONDS,
+    }
+
+
 @app.post("/api/config/test")
 async def config_test(config: ConfigModel, current_admin: dict = Depends(get_current_admin)):
     """ทดสอบการเชื่อมต่อฐานข้อมูล"""
@@ -1270,6 +1598,10 @@ async def transform(
         upload_store[file_id]["status"] = "completed"
         upload_store[file_id]["matched_count"] = result["matched_count"]
         upload_store[file_id]["unmatched_count"] = result["unmatched_count"]
+        upload_store[file_id]["has_discharge"] = result.get("has_discharge", False)
+        upload_store[file_id]["central_death_mismatch_count"] = result.get("central_death_mismatch_count", 0)
+        upload_store[file_id]["central_death_lookup_available"] = result.get("central_death_lookup_available", True)
+        upload_store[file_id]["central_death_lookup_message"] = result.get("central_death_lookup_message", "")
         upload_store[file_id]["selected_hoscodes"] = request.hoscodes
 
         # อัพเดทประวัติ
@@ -1285,6 +1617,10 @@ async def transform(
             "total_rows": len(result["data"]),
             "matched_count": result["matched_count"],
             "unmatched_count": result["unmatched_count"],
+            "has_discharge": result.get("has_discharge", False),
+            "central_death_mismatch_count": result.get("central_death_mismatch_count", 0),
+            "central_death_lookup_available": result.get("central_death_lookup_available", True),
+            "central_death_lookup_message": result.get("central_death_lookup_message", ""),
             "file_id": file_id
         }
 
@@ -1390,7 +1726,11 @@ async def get_history_detail(
         "data": transformed_data,
         "total_rows": len(transformed_data),
         "matched_count": upload_info.get("matched_count", 0),
-        "unmatched_count": upload_info.get("unmatched_count", 0)
+        "unmatched_count": upload_info.get("unmatched_count", 0),
+        "has_discharge": upload_info.get("has_discharge", False),
+        "central_death_mismatch_count": upload_info.get("central_death_mismatch_count", 0),
+        "central_death_lookup_available": upload_info.get("central_death_lookup_available", True),
+        "central_death_lookup_message": upload_info.get("central_death_lookup_message", "")
     }
 
 

@@ -8,12 +8,18 @@ build/
 dist/
 release/
 *.spec
+server/
 *.xlsx
 *.sql
+*.pdf
+*.docx
+*.exe
+*.zip
 opduser.sql
 person.sql
 config.json
 admin.json
+agent.json
 .key
 .jwt_secret
 data/
@@ -22,5 +28,4 @@ uploads/*
 updates/*
 !updates/.gitkeep
 
-DataExchangeTools-client-*.zip
 คู่มือ/
