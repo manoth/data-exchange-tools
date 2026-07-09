@@ -436,12 +436,25 @@
               </button>
             </div>
             <div class="controls-secondary-row">
-              <select class="rows-select" id="rows-select" onchange="handleRowsPerPageChange(this.value)">
-                <option value="20" selected>20 แถว</option>
-                <option value="50">50 แถว</option>
-                <option value="100">100 แถว</option>
-                <option value="200">200 แถว</option>
-              </select>
+              <div class="controls-secondary-left">
+                <select class="rows-select" id="rows-select" onchange="handleRowsPerPageChange(this.value)">
+                  <option value="20" selected>20 แถว</option>
+                  <option value="50">50 แถว</option>
+                  <option value="100">100 แถว</option>
+                  <option value="200">200 แถว</option>
+                </select>
+                <div class="life-status-filters hidden" id="life-status-filters" aria-label="กรองสถานะการเสียชีวิต">
+                  <button type="button" class="life-status-filter active" data-life-filter="all" onclick="setLifeStatusFilter('all')">
+                    ทั้งหมด <strong id="life-count-all">0</strong> คน
+                  </button>
+                  <button type="button" class="life-status-filter" data-life-filter="alive" onclick="setLifeStatusFilter('alive')">
+                    ยังมีชีวิตอยู่ <strong id="life-count-alive">0</strong> คน
+                  </button>
+                  <button type="button" class="life-status-filter life-status-filter-warning" data-life-filter="deathUndischarged" onclick="setLifeStatusFilter('deathUndischarged')">
+                    เสียชีวิตเมื่อเทียบข้อมูลแต่ยังไม่จำหน่าย <strong id="life-count-death">0</strong> คน
+                  </button>
+                </div>
+              </div>
               <div class="datatable-info" id="datatable-info">ทั้งหมด 0 แถว | แสดงผลหลังกรอง 0 แถว</div>
             </div>
           </div>

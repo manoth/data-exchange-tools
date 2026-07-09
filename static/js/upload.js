@@ -19,6 +19,7 @@ let uploadEventsBound = false;
 let isUploading = false;
 let isHistoryDetailMode = false;
 let activeResultFilter = 'all';
+let activeLifeStatusFilter = 'all';
 let centralDeathLookupAvailable = true;
 let centralDeathLookupMessage = '';
 
@@ -432,8 +433,50 @@ function rowMatchesSearchTerm(row) {
   });
 }
 
+function rowMatchesLifeStatusFilter(row) {
+  if (activeLifeStatusFilter === 'alive') return !isCentralDeathMismatch(row);
+  if (activeLifeStatusFilter === 'deathUndischarged') return isCentralDeathMismatch(row);
+  return true;
+}
+
+function updateLifeStatusFilters() {
+  const container = document.getElementById('life-status-filters');
+  const shouldShow = activeResultFilter === 'pidMatched' || activeResultFilter === 'cidMatched';
+  container?.classList.toggle('hidden', !shouldShow);
+
+  if (!shouldShow) {
+    activeLifeStatusFilter = 'all';
+    return;
+  }
+
+  const primaryRows = allData.filter(rowMatchesActiveResultFilter);
+  const deathCount = primaryRows.filter(isCentralDeathMismatch).length;
+  const aliveCount = primaryRows.length - deathCount;
+  const allCount = document.getElementById('life-count-all');
+  const aliveCountElement = document.getElementById('life-count-alive');
+  const deathCountElement = document.getElementById('life-count-death');
+
+  if (allCount) allCount.textContent = primaryRows.length.toLocaleString();
+  if (aliveCountElement) aliveCountElement.textContent = aliveCount.toLocaleString();
+  if (deathCountElement) deathCountElement.textContent = deathCount.toLocaleString();
+
+  container?.querySelectorAll('.life-status-filter').forEach(button => {
+    button.classList.toggle('active', button.dataset.lifeFilter === activeLifeStatusFilter);
+  });
+}
+
+function setLifeStatusFilter(filterName) {
+  activeLifeStatusFilter = filterName;
+  updateLifeStatusFilters();
+  applyResultFilters(true);
+}
+
 function applyResultFilters(render = true) {
-  filteredData = allData.filter(row => rowMatchesActiveResultFilter(row) && rowMatchesSearchTerm(row));
+  filteredData = allData.filter(row => (
+    rowMatchesActiveResultFilter(row)
+    && rowMatchesLifeStatusFilter(row)
+    && rowMatchesSearchTerm(row)
+  ));
   currentPage = 1;
   if (render) renderResultsTable();
 }
@@ -514,11 +557,13 @@ function setResultFilter(filterName) {
   }
 
   activeResultFilter = filterName;
+  activeLifeStatusFilter = 'all';
   updateResultFilterCards({
     has_discharge: !document.getElementById('filter-card-central-death')?.classList.contains('hidden'),
     central_death_lookup_available: centralDeathLookupAvailable,
     central_death_lookup_message: centralDeathLookupMessage
   });
+  updateLifeStatusFilters();
   applyResultFilters(true);
 }
 
@@ -529,6 +574,7 @@ function showResultData(result, options = {}) {
   allData = result.data || [];
   currentColumns = result.columns || [];
   activeResultFilter = 'all';
+  activeLifeStatusFilter = 'all';
   filteredData = [...allData];
   currentPage = 1;
   rowsPerPage = 20;
@@ -560,6 +606,7 @@ function showResultData(result, options = {}) {
   if (rowsSelect) rowsSelect.value = '20';
 
   updateResultFilterCards(result);
+  updateLifeStatusFilters();
   applyResultFilters(false);
   renderResultsTable();
 }

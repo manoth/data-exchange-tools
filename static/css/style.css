@@ -1465,6 +1465,58 @@ table {
   align-items: flex-end;
 }
 
+.controls-secondary-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.life-status-filters {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.life-status-filter {
+  min-height: 40px;
+  padding: 8px 14px;
+  border: 1px solid var(--glass-border);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--text-secondary);
+  font-family: var(--font-th);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: var(--transition);
+}
+
+.life-status-filter:hover {
+  color: var(--text-primary);
+  border-color: rgba(63, 182, 198, 0.6);
+}
+
+.life-status-filter.active {
+  color: var(--accent-blue);
+  border-color: var(--accent-blue);
+  background: rgba(63, 182, 198, 0.12);
+}
+
+.life-status-filter-warning.active {
+  color: var(--warning);
+  border-color: rgba(251, 191, 36, 0.65);
+  background: rgba(251, 191, 36, 0.12);
+}
+
+.life-status-filter strong {
+  color: inherit;
+}
+
 .search-wrapper {
   position: relative;
   flex: 1 1 360px;
@@ -2331,6 +2383,10 @@ table {
   .controls-secondary-row {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .controls-secondary-left {
+    align-items: flex-start;
   }
 
   .search-wrapper {
