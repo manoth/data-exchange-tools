@@ -8,15 +8,17 @@ import json
 import urllib.error
 import urllib.request
 import socket
-from datetime import datetime
+from datetime import date, datetime
 from openpyxl import load_workbook, Workbook
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from database import get_connection
-from config import APP_DIR, load_agent_config
+from config import APP_DIR, load_agent_config, save_agent_api_key, clear_agent_api_key
 
 # กำหนด path สำหรับไฟล์อัพโหลด
 UPLOADS_DIR = os.path.join(APP_DIR, "uploads")
-CENTRAL_API_URL = os.environ.get("CENTRAL_API_URL", "http://127.0.0.1:3000").rstrip("/")
+CENTRAL_API_URL = os.environ.get("CENTRAL_API_URL", "https://apicpho.moph.go.th").rstrip("/")
+CENTRAL_API_ENROLLMENT_TOKEN = os.environ.get("CENTRAL_API_ENROLLMENT_TOKEN", "data-exchange-agent-enroll-dev-token")
+APP_VERSION = os.environ.get("APP_VERSION", "0.1.1")
 APP_PORT = int(os.environ.get("PORT", "8899"))
 
 
@@ -33,6 +35,81 @@ def _agent_api_headers() -> dict:
     if agent_config.get("api_key"):
         headers["X-Agent-Key"] = agent_config["api_key"]
     return headers
+
+
+def _read_hospital_info_for_registration() -> dict:
+    """อ่านข้อมูลหน่วยบริการจาก opdconfig เพื่อใช้ลงทะเบียน Agent กับ API Center"""
+    connection = None
+    try:
+        connection = get_connection()
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT hospitalcode, hospitalname FROM opdconfig LIMIT 1")
+            row = cursor.fetchone() or {}
+        return {
+            "facility_code": str(row.get("hospitalcode") or "").strip(),
+            "facility_name": str(row.get("hospitalname") or "").strip(),
+            "db_status": "ok",
+        }
+    except Exception:
+        return {
+            "facility_code": "",
+            "facility_name": "",
+            "db_status": "failed",
+        }
+    finally:
+        try:
+            if connection:
+                connection.close()
+        except Exception:
+            pass
+
+
+def _ensure_agent_api_key_for_lookup(force: bool = False) -> dict:
+    """ให้ transform ขอ API key เองได้ กรณี heartbeat ยังไม่ได้ key หรือ key เก่าใช้ไม่ได้"""
+    agent_config = load_agent_config()
+    saved_api_url = (agent_config.get("api_center_url") or "").rstrip("/")
+    if (
+        not force
+        and agent_config.get("api_key")
+        and (not saved_api_url or saved_api_url == CENTRAL_API_URL)
+    ):
+        return {"configured": True, "message": ""}
+
+    if force or (agent_config.get("api_key") and saved_api_url and saved_api_url != CENTRAL_API_URL):
+        clear_agent_api_key()
+
+    hospital = _read_hospital_info_for_registration()
+    payload = {
+        "agentUid": _get_agent_uid(),
+        "facilityCode": hospital["facility_code"],
+        "facilityName": hospital["facility_name"],
+        "machineName": socket.gethostname(),
+        "appVersion": APP_VERSION,
+        "frontendVersion": APP_VERSION,
+        "dbStatus": hospital["db_status"],
+    }
+    request = urllib.request.Request(
+        f"{CENTRAL_API_URL}/api/agents/register",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "X-Agent-Enrollment-Token": CENTRAL_API_ENROLLMENT_TOKEN,
+        },
+        method="POST",
+    )
+    with urllib.request.urlopen(request, timeout=10) as response:
+        result = json.loads(response.read().decode("utf-8"))
+
+    data = result.get("data") or {}
+    api_key = data.get("apiKey")
+    api_key_prefix = data.get("apiKeyPrefix") or ""
+    if not api_key:
+        raise RuntimeError("API Center ไม่ได้ส่ง Agent API key กลับมา")
+
+    save_result = save_agent_api_key(api_key, api_key_prefix, CENTRAL_API_URL)
+    if not save_result.get("success"):
+        raise RuntimeError(save_result.get("message") or "บันทึก Agent API key ไม่สำเร็จ")
+    return {"configured": True, "message": ""}
 
 
 def _cell_to_text(value) -> str:
@@ -104,14 +181,81 @@ def _normalize_discharge(value) -> str:
     return text
 
 
+def _normalize_central_person_key(value) -> str:
+    text = _cell_to_text(value).strip()
+    if not text:
+        return ""
+    if text.endswith(".0") and text[:-2].isdigit():
+        text = text[:-2]
+    digits = "".join(char for char in text if char.isdigit())
+    if not digits:
+        return text
+    if len(digits) == 12:
+        return digits.zfill(13)
+    return digits
+
+
+def _normalize_cid_prefix(value) -> str:
+    digits = "".join(char for char in _cell_to_text(value) if char.isdigit())
+    return digits[:9] if len(digits) >= 9 else ""
+
+
+def _normalize_sex(value) -> str:
+    text = _cell_to_text(value).strip()
+    if text.endswith(".0") and text[:-2].isdigit():
+        text = text[:-2]
+    return text
+
+
+def _normalize_birth(value) -> str:
+    if isinstance(value, (datetime, date)):
+        return value.strftime("%Y-%m-%d")
+    text = _cell_to_text(value).strip()
+    if not text:
+        return ""
+    text = text.split("T", 1)[0].split(" ", 1)[0].replace("/", "-")
+    digits = "".join(char for char in text if char.isdigit())
+    if len(digits) == 8:
+        return f"{digits[:4]}-{digits[4:6]}-{digits[6:8]}"
+    return text
+
+
+def _normalize_name_prefix(value) -> str:
+    """ลบเครื่องหมายปกปิดแล้ว normalize สำหรับเทียบแบบ SQL LIKE 'prefix%'."""
+    return _cell_to_text(value).replace("*", "").strip().casefold()
+
+
+def _pid_lookup_keys(value) -> list:
+    pid = _normalize_pid(value)
+    if not pid:
+        return []
+    keys = [pid]
+    if pid.isdigit():
+        keys.append(str(int(pid)))
+    return list(dict.fromkeys(keys))
+
+
+def _is_complete_person_cid(value) -> bool:
+    return len(_normalize_central_person_key(value)) == 13
+
+
 def _lookup_central_death_pids(pids: list) -> dict:
     """ถาม API กลางว่ามี PID/CID ใดอยู่ในฐานข้อมูลคนตายกลางแล้วบ้าง"""
-    clean_pids = sorted({str(pid).strip() for pid in pids if str(pid).strip()})
+    clean_pids = sorted({_normalize_central_person_key(pid) for pid in pids if _normalize_central_person_key(pid)})
     if not clean_pids or not CENTRAL_API_URL:
         return {
             "matched": set(),
             "available": bool(CENTRAL_API_URL),
             "message": "" if CENTRAL_API_URL else "ยังไม่ได้กำหนดเส้นทาง API Center",
+        }
+
+    try:
+        _ensure_agent_api_key_for_lookup()
+    except Exception as exc:
+        return {
+            "matched": set(),
+            "available": False,
+            "message": f"ไม่สามารถลงทะเบียน Agent API Key เพื่อเทียบข้อมูลการตายได้ ({exc})",
         }
 
     matched = set()
@@ -120,16 +264,21 @@ def _lookup_central_death_pids(pids: list) -> dict:
     last_error = ""
     for batch in _chunks(clean_pids, 1000):
         total_batches += 1
-        payload = json.dumps({"pids": batch}).encode("utf-8")
-        request = urllib.request.Request(
-            f"{CENTRAL_API_URL}/api/agents/death-persons/lookup",
-            data=payload,
-            headers=_agent_api_headers(),
-            method="POST",
-        )
         try:
-            with urllib.request.urlopen(request, timeout=15) as response:
-                result = json.loads(response.read().decode("utf-8"))
+            result = _request_central_death_lookup(batch)
+        except urllib.error.HTTPError as exc:
+            if exc.code in (401, 403):
+                try:
+                    _ensure_agent_api_key_for_lookup(force=True)
+                    result = _request_central_death_lookup(batch)
+                except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, RuntimeError) as retry_exc:
+                    failed_batches += 1
+                    last_error = str(retry_exc)
+                    continue
+            else:
+                failed_batches += 1
+                last_error = str(exc)
+                continue
         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
             failed_batches += 1
             last_error = str(exc)
@@ -138,7 +287,7 @@ def _lookup_central_death_pids(pids: list) -> dict:
         if result.get("ok"):
             data = result.get("data") or {}
             for pid in data.get("matchedPids") or []:
-                matched.add(str(pid).strip())
+                matched.add(_normalize_central_person_key(pid))
 
     if total_batches > 0 and failed_batches == total_batches:
         return {
@@ -155,6 +304,18 @@ def _lookup_central_death_pids(pids: list) -> dict:
         "available": True,
         "message": message,
     }
+
+
+def _request_central_death_lookup(batch: list) -> dict:
+    payload = json.dumps({"pids": batch}).encode("utf-8")
+    request = urllib.request.Request(
+        f"{CENTRAL_API_URL}/api/agents/death-persons/lookup",
+        data=payload,
+        headers=_agent_api_headers(),
+        method="POST",
+    )
+    with urllib.request.urlopen(request, timeout=15) as response:
+        return json.loads(response.read().decode("utf-8"))
 
 
 def process_upload(file_path: str) -> dict:
@@ -213,41 +374,43 @@ def process_upload(file_path: str) -> dict:
 
 
 def transform_data(file_id: str, data: list, columns: list, selected_hoscodes: list = None) -> dict:
-    """
-    แปลงข้อมูลโดยจับคู่ pid กับตาราง person
-
-    Args:
-        file_id: ID ของไฟล์
-        data: list ของ dict ข้อมูลจาก Excel
-        columns: list ของชื่อคอลัมน์
-
-    Returns:
-        dict: {data, columns, matched_count, unmatched_count}
-    """
+    """จับคู่ PID ก่อน แล้ว fallback ด้วย CID/เพศ/วันเกิด/ชื่อ/นามสกุล."""
     try:
-        father_column = next((col for col in columns if str(col).upper() == "FATHER"), None)
-        mother_column = next((col for col in columns if str(col).upper() == "MOTHER"), None)
-        has_father_column = father_column is not None
-        has_mother_column = mother_column is not None
-        discharge_column = next((col for col in columns if str(col).upper() == "DISCHARGE"), None)
-        cid_column = next((col for col in columns if str(col).upper() == "CID"), None)
-        person_columns = ["PERSON_CID", "FULL_NAME"]
+        column_by_name = {str(col).upper(): col for col in columns}
+        father_column = column_by_name.get("FATHER")
+        mother_column = column_by_name.get("MOTHER")
+        discharge_column = column_by_name.get("DISCHARGE")
+        cid_column = column_by_name.get("CID")
+        pid_column = column_by_name.get("PID")
+        hoscode_column = column_by_name.get("HOSCODE")
+        sex_column = column_by_name.get("SEX")
+        birth_column = column_by_name.get("BIRTH")
+        name_column = column_by_name.get("NAME")
+        lname_column = column_by_name.get("LNAME")
+        person_columns = ["PERSON_CID", "FULL_NAME", "เงื่อนไขที่ใช้", "เทียบตาย"]
 
         selected_hoscodes = [str(code).strip() for code in (selected_hoscodes or []) if str(code).strip()]
         if selected_hoscodes:
             selected_set = {_normalize_hoscode(code) for code in selected_hoscodes}
-            data = [row for row in data if _normalize_hoscode(row.get("HOSCODE", "")) in selected_set]
+            data = [
+                row for row in data
+                if _normalize_hoscode(row.get(hoscode_column or "", "")) in selected_set
+            ]
 
         def empty_person_fields() -> dict:
-            fields = {
+            return {
                 "PERSON_CID": "",
                 "FULL_NAME": "",
+                "เงื่อนไขที่ใช้": "ไม่พบข้อมูล",
+                "เทียบตาย": "-",
                 "_matched": False,
+                "_pid_matched": False,
+                "_cid_matched": False,
+                "_match_method": "none",
                 "_central_death_mismatch": False,
             }
-            return fields
 
-        def apply_person_fields(target: dict, person: dict) -> None:
+        def apply_person_fields(target: dict, person: dict, method: str) -> None:
             target["PERSON_CID"] = person.get("cid", "")
             target["FULL_NAME"] = person.get("full_name", "")
             if father_column and person.get("father_name"):
@@ -255,63 +418,20 @@ def transform_data(file_id: str, data: list, columns: list, selected_hoscodes: l
             if mother_column and person.get("mother_name"):
                 target[mother_column] = person.get("mother_name", "")
             target["_matched"] = True
+            target["_pid_matched"] = method == "pid"
+            target["_cid_matched"] = method == "cid"
+            target["_match_method"] = method
+            target["เงื่อนไขที่ใช้"] = "PID" if method == "pid" else "CID"
             target["_central_death_mismatch"] = False
 
-        # ค้นหาคอลัมน์ pid (ไม่สนใจตัวพิมพ์เล็ก/ใหญ่)
-        pid_column = None
-        hoscode_column = None
-        for col in columns:
-            if col.lower() == "pid":
-                pid_column = col
-            if col.lower() == "hoscode":
-                hoscode_column = col
-
-        if pid_column is None or hoscode_column is None:
-            transformed_data = []
-            for row in data:
-                new_row = dict(row)
-                new_row.update(empty_person_fields())
-                transformed_data.append(new_row)
-            return {
-                "data": transformed_data,
-                "columns": person_columns + columns,
-                "matched_count": 0,
-                "unmatched_count": len(data),
-                "has_discharge": bool(discharge_column),
-                "central_death_mismatch_count": 0,
-                "central_death_lookup_available": True,
-                "central_death_lookup_message": ""
-            }
-
-        # ดึงค่า pid ทั้งหมดจากข้อมูล โดยเก็บทั้งแบบเดิมและแบบตัดศูนย์นำหน้า
-        pid_lookup_keys = set()
+        pid_values = set()
+        cid_prefixes = set()
         for row in data:
-            pid_str = _normalize_pid(row.get(pid_column, ""))
-            if pid_str:
-                pid_lookup_keys.add(pid_str)
-                if pid_str.isdigit():
-                    pid_lookup_keys.add(str(int(pid_str)))
+            pid_values.update(_pid_lookup_keys(row.get(pid_column or "", "")))
+            prefix = _normalize_cid_prefix(row.get(cid_column or "", ""))
+            if prefix:
+                cid_prefixes.add(prefix)
 
-        pid_values = sorted(pid_lookup_keys)
-
-        if not pid_values:
-            transformed_data = []
-            for row in data:
-                new_row = dict(row)
-                new_row.update(empty_person_fields())
-                transformed_data.append(new_row)
-            return {
-                "data": transformed_data,
-                "columns": person_columns + columns,
-                "matched_count": 0,
-                "unmatched_count": len(data),
-                "has_discharge": bool(discharge_column),
-                "central_death_mismatch_count": 0,
-                "central_death_lookup_available": True,
-                "central_death_lookup_message": ""
-            }
-
-        # Query ข้อมูลจากตาราง person แบบ batch เพื่อไม่ให้ IN clause ใหญ่เกินไป
         results = []
         local_hoscodes = set()
         connection = None
@@ -329,7 +449,7 @@ def transform_data(file_id: str, data: list, columns: list, selected_hoscodes: l
                     if _normalize_hoscode(row.get("hospitalcode"))
                 }
 
-                for batch in _chunks(pid_values):
+                for batch in _chunks(sorted(pid_values)):
                     placeholders = ",".join(["%s"] * len(batch))
                     sql = f"""
                         SELECT
@@ -339,9 +459,30 @@ def transform_data(file_id: str, data: list, columns: list, selected_hoscodes: l
                             fname,
                             lname,
                             father_name,
-                            mother_name
+                            mother_name,
+                            sex,
+                            birthdate
                         FROM person
                         WHERE CAST(person_id AS CHAR) IN ({placeholders})
+                    """
+                    cursor.execute(sql, tuple(batch))
+                    results.extend(cursor.fetchall())
+
+                for batch in _chunks(sorted(cid_prefixes)):
+                    placeholders = ",".join(["%s"] * len(batch))
+                    sql = f"""
+                        SELECT
+                            person_id,
+                            cid,
+                            pname,
+                            fname,
+                            lname,
+                            father_name,
+                            mother_name,
+                            sex,
+                            birthdate
+                        FROM person
+                        WHERE LEFT(CAST(cid AS CHAR), 9) IN ({placeholders})
                     """
                     cursor.execute(sql, tuple(batch))
                     results.extend(cursor.fetchall())
@@ -349,8 +490,8 @@ def transform_data(file_id: str, data: list, columns: list, selected_hoscodes: l
             if connection:
                 connection.close()
 
-        # สร้าง mapping: person_id -> {cid, full_name}
         person_map = {}
+        cid_match_map = {}
         for row in results:
             person_id = _normalize_pid(row.get("person_id"))
             person = {
@@ -363,45 +504,76 @@ def transform_data(file_id: str, data: list, columns: list, selected_hoscodes: l
                 ]).strip(),
                 "father_name": row.get("father_name", "") or "",
                 "mother_name": row.get("mother_name", "") or "",
+                "sex": _normalize_sex(row.get("sex")),
+                "birth": _normalize_birth(row.get("birthdate")),
+                "fname": _normalize_name_prefix(row.get("fname")),
+                "lname": _normalize_name_prefix(row.get("lname")),
             }
-            person_map[person_id] = person
-            if person_id.isdigit():
-                person_map[str(int(person_id))] = person
+            for key in _pid_lookup_keys(person_id):
+                person_map[key] = person
+            cid_key = (
+                _normalize_cid_prefix(row.get("cid")),
+                person["sex"],
+                person["birth"],
+            )
+            if all(cid_key):
+                cid_match_map.setdefault(cid_key, []).append(person)
 
-        # แปลงข้อมูล
-        matched_count = 0
-        unmatched_count = 0
+        pid_matched_count = 0
+        cid_matched_count = 0
         central_death_candidates = {}
         transformed_data = []
 
         for row in data:
             new_row = dict(row)
-            pid_str = _normalize_pid(row.get(pid_column, ""))
+            new_row.update(empty_person_fields())
             row_hoscode = _normalize_hoscode(row.get(hoscode_column, ""))
             hoscode_matched = bool(row_hoscode and row_hoscode in local_hoscodes)
+            person = None
 
-            if pid_str and hoscode_matched:
-                lookup_keys = [pid_str]
-                if pid_str.isdigit():
-                    lookup_keys.append(str(int(pid_str)))
-                person = next((person_map[key] for key in lookup_keys if key in person_map), None)
+            if pid_column and hoscode_column and hoscode_matched:
+                person = next(
+                    (person_map[key] for key in _pid_lookup_keys(row.get(pid_column, "")) if key in person_map),
+                    None,
+                )
+            if person:
+                apply_person_fields(new_row, person, "pid")
+                pid_matched_count += 1
+            elif cid_column and sex_column and birth_column and name_column and lname_column:
+                cid_key = (
+                    _normalize_cid_prefix(row.get(cid_column, "")),
+                    _normalize_sex(row.get(sex_column, "")),
+                    _normalize_birth(row.get(birth_column, "")),
+                )
+                excel_fname_prefix = _normalize_name_prefix(row.get(name_column, ""))
+                excel_lname_prefix = _normalize_name_prefix(row.get(lname_column, ""))
+                candidates = cid_match_map.get(cid_key, []) if all(cid_key) else []
+                person = next(
+                    (
+                        candidate for candidate in candidates
+                        if candidate["fname"].startswith(excel_fname_prefix)
+                        and candidate["lname"].startswith(excel_lname_prefix)
+                    ),
+                    None,
+                )
                 if person:
-                    apply_person_fields(new_row, person)
-                    matched_count += 1
-                else:
-                    new_row.update(empty_person_fields())
-                    unmatched_count += 1
-            else:
-                new_row.update(empty_person_fields())
-                unmatched_count += 1
+                    apply_person_fields(new_row, person, "cid")
+                    cid_matched_count += 1
 
-            if discharge_column and _normalize_discharge(row.get(discharge_column, "")) != "1":
-                death_lookup_pid = _cell_to_text(new_row.get("PERSON_CID") or row.get(cid_column or "", ""))
-                if death_lookup_pid:
-                    central_death_candidates.setdefault(death_lookup_pid, []).append(new_row)
+            if (
+                discharge_column
+                and new_row["_matched"]
+                and _normalize_discharge(row.get(discharge_column, "")) != "1"
+                and _is_complete_person_cid(new_row.get("PERSON_CID"))
+            ):
+                death_lookup_pid = _normalize_central_person_key(new_row["PERSON_CID"])
+                new_row["เทียบตาย"] = "รอตรวจสอบ"
+                central_death_candidates.setdefault(death_lookup_pid, []).append(new_row)
 
             transformed_data.append(new_row)
 
+        matched_count = pid_matched_count + cid_matched_count
+        unmatched_count = len(transformed_data) - matched_count
         central_death_mismatch_count = 0
         central_death_lookup_available = True
         central_death_lookup_message = ""
@@ -410,16 +582,26 @@ def transform_data(file_id: str, data: list, columns: list, selected_hoscodes: l
             matched_death_pids = death_lookup_result.get("matched", set())
             central_death_lookup_available = bool(death_lookup_result.get("available"))
             central_death_lookup_message = death_lookup_result.get("message", "")
-            for pid in matched_death_pids:
-                for row in central_death_candidates.get(pid, []):
-                    row["_central_death_mismatch"] = True
-                    central_death_mismatch_count += 1
+            for pid, candidate_rows in central_death_candidates.items():
+                found = pid in matched_death_pids
+                for candidate_row in candidate_rows:
+                    if central_death_lookup_available:
+                        candidate_row["เทียบตาย"] = "พบข้อมูล" if found else "ไม่พบข้อมูล"
+                    else:
+                        candidate_row["เทียบตาย"] = "ใช้ไม่ได้"
+                    candidate_row["_central_death_mismatch"] = found
+                    if found:
+                        central_death_mismatch_count += 1
 
         return {
             "data": transformed_data,
             "columns": person_columns + columns,
             "matched_count": matched_count,
             "unmatched_count": unmatched_count,
+            "pid_matched_count": pid_matched_count,
+            "pid_unmatched_count": len(transformed_data) - pid_matched_count,
+            "cid_matched_count": cid_matched_count,
+            "cid_unmatched_count": unmatched_count,
             "has_discharge": bool(discharge_column),
             "central_death_mismatch_count": central_death_mismatch_count,
             "central_death_lookup_available": central_death_lookup_available,

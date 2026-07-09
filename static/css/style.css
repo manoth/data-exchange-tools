@@ -1606,9 +1606,40 @@ table {
 
 .result-filter-cards {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 12px;
   margin: 0 0 18px;
+}
+
+.result-symbol-cell {
+  text-align: center;
+}
+
+.result-symbol-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 34px;
+  min-height: 30px;
+  padding: 4px 9px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.match-pill-pid,
+.death-pill-clear { color: var(--success); background: rgba(74, 222, 128, 0.1); }
+.match-pill-cid { color: var(--accent-blue); background: rgba(63, 182, 198, 0.12); }
+.match-pill-none,
+.death-pill-skip { color: var(--text-muted); background: rgba(148, 163, 184, 0.08); }
+.death-pill-found { color: var(--warning); background: rgba(251, 191, 36, 0.12); border-color: rgba(251, 191, 36, 0.45); }
+.death-pill-unavailable { color: var(--danger); background: rgba(248, 113, 113, 0.1); }
+
+@media (max-width: 1500px) {
+  .result-filter-cards {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 
 .result-filter-card {
@@ -1838,6 +1869,12 @@ table {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
+}
+
+.readonly-api-actions {
+  display: flex;
+  justify-content: flex-start;
+  margin-top: 14px;
 }
 
 .readonly-api-item {

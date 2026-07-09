@@ -27,7 +27,7 @@ from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 from config import (
     APP_DIR, load_config, save_config, test_connection, is_configured,
     public_config, authenticate_admin, change_admin_password,
-    load_agent_config, save_agent_api_key, public_agent_config
+    load_agent_config, save_agent_api_key, clear_agent_api_key, public_agent_config
 )
 from auth import authenticate_user, create_token, verify_token
 from models import (
@@ -39,7 +39,7 @@ from transform import process_upload, transform_data, export_excel
 from database import get_connection
 
 # กำหนด path
-APP_VERSION = "0.1.0"
+APP_VERSION = "0.1.1"
 APP_HOST = os.environ.get("APP_HOST", "0.0.0.0")
 APP_PORT = int(os.environ.get("PORT", "8899"))
 APP_URL = os.environ.get("APP_URL", f"http://localhost:{APP_PORT}")
@@ -175,14 +175,23 @@ def _send_agent_heartbeat() -> dict:
             "hisError": hospital["error"],
         },
     }
-    request = urllib.request.Request(
-        f"{CENTRAL_API_URL}/api/agents/heartbeat",
-        data=json.dumps(payload).encode("utf-8"),
-        headers=_agent_api_headers(),
-        method="POST",
-    )
-    with urllib.request.urlopen(request, timeout=8) as response:
-        return json.loads(response.read().decode("utf-8"))
+    def send_once():
+        request = urllib.request.Request(
+            f"{CENTRAL_API_URL}/api/agents/heartbeat",
+            data=json.dumps(payload).encode("utf-8"),
+            headers=_agent_api_headers(),
+            method="POST",
+        )
+        with urllib.request.urlopen(request, timeout=8) as response:
+            return json.loads(response.read().decode("utf-8"))
+
+    try:
+        return send_once()
+    except urllib.error.HTTPError as exc:
+        if exc.code not in (401, 403):
+            raise
+        _ensure_agent_api_key(force=True)
+        return send_once()
 
 
 def _central_api_json(path: str, method: str = "GET", payload: dict = None) -> dict:
@@ -228,13 +237,20 @@ def _agent_api_headers() -> dict:
     return headers
 
 
-def _ensure_agent_api_key() -> dict:
+def _ensure_agent_api_key(force: bool = False) -> dict:
     agent_config = load_agent_config()
-    if agent_config.get("api_key"):
+    saved_api_url = (agent_config.get("api_center_url") or "").rstrip("/")
+    if (
+        not force
+        and agent_config.get("api_key")
+        and (not saved_api_url or saved_api_url == CENTRAL_API_URL)
+    ):
         return {
             "configured": True,
             "api_key_prefix": agent_config.get("api_key_prefix", ""),
         }
+    if force or (agent_config.get("api_key") and saved_api_url and saved_api_url != CENTRAL_API_URL):
+        clear_agent_api_key()
 
     hospital = _read_hospital_info_from_his()
     payload = {
@@ -271,6 +287,21 @@ def _ensure_agent_api_key() -> dict:
     return {
         "configured": True,
         "api_key_prefix": api_key_prefix,
+    }
+
+
+def _get_agent_heartbeat_status() -> dict:
+    with agent_heartbeat_lock:
+        state = dict(agent_heartbeat_state)
+    agent_config = public_agent_config()
+    saved_api_url = (agent_config.get("api_center_url") or "").rstrip("/")
+    return {
+        **state,
+        "api_key_configured": agent_config["api_key_configured"],
+        "api_key_prefix": agent_config["api_key_prefix"],
+        "api_key_registered_at": agent_config["registered_at"],
+        "api_key_api_center_url": saved_api_url,
+        "api_key_url_matches": not saved_api_url or saved_api_url == CENTRAL_API_URL,
     }
 
 
@@ -379,7 +410,7 @@ def _agent_heartbeat_worker():
             hospital = _read_hospital_info_from_his()
             with agent_heartbeat_lock:
                 agent_heartbeat_state.update({
-                    "last_success": datetime.now().isoformat(timespec="seconds"),
+                    "last_success": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                     "last_error": "",
                     "facility_code": hospital["facility_code"],
                     "facility_name": hospital["facility_name"],
@@ -1187,6 +1218,7 @@ async def agent_api_center_info(current_admin: dict = Depends(get_current_admin)
     """แสดงข้อมูลเส้นทาง API Center ที่ Agent ใช้งานแบบอ่านอย่างเดียว"""
     agent_config = public_agent_config()
     api_health = _check_central_api_health()
+    heartbeat_status = _get_agent_heartbeat_status()
     return {
         "success": True,
         "api_center_url": CENTRAL_API_URL,
@@ -1199,7 +1231,29 @@ async def agent_api_center_info(current_admin: dict = Depends(get_current_admin)
         "api_center_online": api_health["online"],
         "api_center_message": api_health["message"],
         "heartbeat_interval_seconds": AGENT_HEARTBEAT_INTERVAL_SECONDS,
+        "heartbeat_running": heartbeat_status["running"],
+        "last_heartbeat_at": heartbeat_status.get("last_success") or heartbeat_status.get("last_success_at"),
+        "last_heartbeat_error": heartbeat_status["last_error"],
+        "api_key_api_center_url": heartbeat_status["api_key_api_center_url"],
+        "api_key_url_matches": heartbeat_status["api_key_url_matches"],
     }
+
+
+@app.post("/api/agent/api-center/retry")
+async def agent_api_center_retry(current_admin: dict = Depends(get_current_admin)):
+    """บังคับให้ Agent ลงทะเบียน key และส่ง heartbeat ใหม่ทันที"""
+    try:
+        result = _send_agent_heartbeat()
+        with agent_heartbeat_lock:
+            agent_heartbeat_state.update({
+                "last_success": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "last_error": "",
+            })
+        return {"success": True, "message": "ลงทะเบียนและส่ง heartbeat สำเร็จ", "result": result}
+    except Exception as exc:
+        with agent_heartbeat_lock:
+            agent_heartbeat_state["last_error"] = str(exc)
+        return {"success": False, "message": f"ส่ง heartbeat ไม่สำเร็จ: {exc}"}
 
 
 @app.post("/api/config/test")
@@ -1598,6 +1652,8 @@ async def transform(
         upload_store[file_id]["status"] = "completed"
         upload_store[file_id]["matched_count"] = result["matched_count"]
         upload_store[file_id]["unmatched_count"] = result["unmatched_count"]
+        for count_key in ("pid_matched_count", "pid_unmatched_count", "cid_matched_count", "cid_unmatched_count"):
+            upload_store[file_id][count_key] = result.get(count_key, 0)
         upload_store[file_id]["has_discharge"] = result.get("has_discharge", False)
         upload_store[file_id]["central_death_mismatch_count"] = result.get("central_death_mismatch_count", 0)
         upload_store[file_id]["central_death_lookup_available"] = result.get("central_death_lookup_available", True)
@@ -1617,6 +1673,10 @@ async def transform(
             "total_rows": len(result["data"]),
             "matched_count": result["matched_count"],
             "unmatched_count": result["unmatched_count"],
+            "pid_matched_count": result.get("pid_matched_count", 0),
+            "pid_unmatched_count": result.get("pid_unmatched_count", 0),
+            "cid_matched_count": result.get("cid_matched_count", 0),
+            "cid_unmatched_count": result.get("cid_unmatched_count", 0),
             "has_discharge": result.get("has_discharge", False),
             "central_death_mismatch_count": result.get("central_death_mismatch_count", 0),
             "central_death_lookup_available": result.get("central_death_lookup_available", True),
@@ -1717,7 +1777,7 @@ async def get_history_detail(
 
     transformed_columns = upload_info.get("transformed_columns")
     if not transformed_columns:
-        transformed_columns = ["PERSON_CID", "FULL_NAME"] + list(upload_info.get("columns", []))
+        transformed_columns = ["PERSON_CID", "FULL_NAME", "เงื่อนไขที่ใช้", "เทียบตาย"] + list(upload_info.get("columns", []))
     return {
         "success": True,
         "file_id": file_id,
@@ -1727,6 +1787,10 @@ async def get_history_detail(
         "total_rows": len(transformed_data),
         "matched_count": upload_info.get("matched_count", 0),
         "unmatched_count": upload_info.get("unmatched_count", 0),
+        "pid_matched_count": upload_info.get("pid_matched_count", 0),
+        "pid_unmatched_count": upload_info.get("pid_unmatched_count", 0),
+        "cid_matched_count": upload_info.get("cid_matched_count", 0),
+        "cid_unmatched_count": upload_info.get("cid_unmatched_count", 0),
         "has_discharge": upload_info.get("has_discharge", False),
         "central_death_mismatch_count": upload_info.get("central_death_mismatch_count", 0),
         "central_death_lookup_available": upload_info.get("central_death_lookup_available", True),

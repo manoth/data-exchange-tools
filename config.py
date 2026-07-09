@@ -292,6 +292,16 @@ def save_agent_api_key(api_key: str, api_key_prefix: str = "", api_center_url: s
         return {"success": False, "message": f"ไม่สามารถบันทึก Agent API key ได้: {e}"}
 
 
+def clear_agent_api_key() -> dict:
+    """ล้าง Agent API key ที่บันทึกไว้ เพื่อให้ระบบลงทะเบียนกับ API Center ใหม่"""
+    try:
+        if os.path.exists(AGENT_CONFIG_FILE):
+            os.remove(AGENT_CONFIG_FILE)
+        return {"success": True, "message": "ล้าง Agent API key สำเร็จ"}
+    except Exception as e:
+        return {"success": False, "message": f"ไม่สามารถล้าง Agent API key ได้: {e}"}
+
+
 def public_agent_config() -> dict:
     """คืนค่า Agent API config ที่ปลอดภัย ไม่ส่ง key จริงไปหน้าเว็บ"""
     config = load_agent_config()

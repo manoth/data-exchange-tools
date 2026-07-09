@@ -359,14 +359,18 @@ async function loadApiCenterInfo() {
     api_center_url: document.getElementById('settings-api-center-url'),
     agent_uid: document.getElementById('settings-api-agent-uid'),
     api_key_prefix: document.getElementById('settings-api-key-prefix'),
-    api_key_registered_at: document.getElementById('settings-api-key-registered-at')
+    api_key_registered_at: document.getElementById('settings-api-key-registered-at'),
+    last_heartbeat_at: document.getElementById('settings-api-last-heartbeat-at'),
+    last_heartbeat_error: document.getElementById('settings-api-last-heartbeat-error')
   };
   const keyStatus = document.getElementById('settings-api-key-status');
+  const retryBtn = document.getElementById('settings-api-retry-btn');
 
   Object.values(fields).forEach(field => {
     if (field) field.textContent = 'กำลังโหลด...';
   });
   setApiKeyStatusBadge(keyStatus, null);
+  if (retryBtn) retryBtn.disabled = true;
 
   try {
     const result = await api('/api/agent/api-center', { method: 'GET' });
@@ -381,27 +385,59 @@ async function loadApiCenterInfo() {
       keyStatus,
       result.api_key_configured,
       result.api_center_online,
-      result.api_center_message
+      result.api_center_message,
+      result.last_heartbeat_error
     );
+    if (retryBtn) retryBtn.disabled = false;
   } catch (error) {
     Object.values(fields).forEach(field => {
       if (field) field.textContent = '-';
     });
     setApiKeyStatusBadge(keyStatus, false, false, error.message || 'โหลดสถานะไม่ได้');
+    if (retryBtn) retryBtn.disabled = false;
     showToast(error.message || 'ไม่สามารถโหลดข้อมูล API Center ได้', 'warning');
   }
 }
 
-function setApiKeyStatusBadge(element, isConfigured, apiCenterOnline = null, message = '') {
+async function retryApiCenterHeartbeat() {
+  const retryBtn = document.getElementById('settings-api-retry-btn');
+  const originalHtml = retryBtn ? retryBtn.innerHTML : '';
+
+  if (retryBtn) {
+    retryBtn.disabled = true;
+    retryBtn.innerHTML = 'กำลังลงทะเบียน...';
+  }
+
+  try {
+    const result = await api('/api/agent/api-center/retry', { method: 'POST' });
+    if (!result || !result.success) {
+      throw new Error(result?.message || 'ลงทะเบียน/ส่ง Heartbeat ไม่สำเร็จ');
+    }
+    showToast(result.message || 'ลงทะเบียนและส่ง Heartbeat สำเร็จ', 'success');
+  } catch (error) {
+    showToast(error.message || 'ลงทะเบียน/ส่ง Heartbeat ไม่สำเร็จ', 'error');
+  } finally {
+    if (retryBtn) {
+      retryBtn.disabled = false;
+      retryBtn.innerHTML = originalHtml;
+    }
+    loadApiCenterInfo();
+  }
+}
+
+function setApiKeyStatusBadge(element, isConfigured, apiCenterOnline = null, message = '', heartbeatError = '') {
   if (!element) return;
   element.classList.remove('api-key-status-ok', 'api-key-status-error', 'api-key-status-muted');
   element.removeAttribute('title');
 
-  if (isConfigured === true && apiCenterOnline === true) {
+  if (isConfigured === true && apiCenterOnline === true && !heartbeatError) {
     element.textContent = 'API Center พร้อมใช้งาน';
     element.classList.add('api-key-status-ok');
   } else if (isConfigured === false) {
     element.textContent = 'ยังไม่มี Agent API Key';
+    element.classList.add('api-key-status-error');
+  } else if (heartbeatError) {
+    element.textContent = 'Heartbeat มีปัญหา';
     element.classList.add('api-key-status-error');
   } else if (apiCenterOnline === false) {
     element.textContent = 'API Center ติดต่อไม่ได้';
@@ -411,7 +447,8 @@ function setApiKeyStatusBadge(element, isConfigured, apiCenterOnline = null, mes
     element.classList.add('api-key-status-muted');
   }
 
-  if (message) element.setAttribute('title', message);
+  const detail = heartbeatError || message;
+  if (detail) element.setAttribute('title', detail);
 }
 
 /**

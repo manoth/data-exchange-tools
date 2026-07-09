@@ -398,6 +398,14 @@ function isRowMatched(row) {
   return isTrueFlag(row?._matched);
 }
 
+function isPidMatched(row) {
+  return isTrueFlag(row?._pid_matched) || row?._match_method === 'pid';
+}
+
+function isCidMatched(row) {
+  return isTrueFlag(row?._cid_matched) || row?._match_method === 'cid';
+}
+
 function isCentralDeathMismatch(row) {
   return isTrueFlag(row?._central_death_mismatch);
 }
@@ -407,8 +415,10 @@ function getDisplayColumns() {
 }
 
 function rowMatchesActiveResultFilter(row) {
-  if (activeResultFilter === 'matched') return isRowMatched(row);
-  if (activeResultFilter === 'unmatched') return !isRowMatched(row);
+  if (activeResultFilter === 'pidMatched') return isPidMatched(row);
+  if (activeResultFilter === 'pidUnmatched') return !isPidMatched(row);
+  if (activeResultFilter === 'cidMatched') return isCidMatched(row);
+  if (activeResultFilter === 'cidUnmatched') return !isRowMatched(row);
   if (activeResultFilter === 'centralDeath') return isCentralDeathMismatch(row);
   return true;
 }
@@ -438,18 +448,24 @@ function updateResultFilterCards(result = {}) {
 
   const counts = {
     all: allData.length,
-    matched: allData.filter(isRowMatched).length,
-    unmatched: allData.filter(row => !isRowMatched(row)).length,
+    pidMatched: allData.filter(isPidMatched).length,
+    pidUnmatched: allData.filter(row => !isPidMatched(row)).length,
+    cidMatched: allData.filter(isCidMatched).length,
+    cidUnmatched: allData.filter(row => !isRowMatched(row)).length,
     centralDeath: allData.filter(isCentralDeathMismatch).length
   };
 
   const allCount = document.getElementById('filter-count-all');
-  const matchedCount = document.getElementById('filter-count-matched');
-  const unmatchedCount = document.getElementById('filter-count-unmatched');
+  const pidMatchedCount = document.getElementById('filter-count-pid-matched');
+  const pidUnmatchedCount = document.getElementById('filter-count-pid-unmatched');
+  const cidMatchedCount = document.getElementById('filter-count-cid-matched');
+  const cidUnmatchedCount = document.getElementById('filter-count-cid-unmatched');
   const centralDeathCount = document.getElementById('filter-count-central-death');
   if (allCount) allCount.textContent = counts.all.toLocaleString();
-  if (matchedCount) matchedCount.textContent = counts.matched.toLocaleString();
-  if (unmatchedCount) unmatchedCount.textContent = counts.unmatched.toLocaleString();
+  if (pidMatchedCount) pidMatchedCount.textContent = Number(result.pid_matched_count ?? counts.pidMatched).toLocaleString();
+  if (pidUnmatchedCount) pidUnmatchedCount.textContent = Number(result.pid_unmatched_count ?? counts.pidUnmatched).toLocaleString();
+  if (cidMatchedCount) cidMatchedCount.textContent = Number(result.cid_matched_count ?? counts.cidMatched).toLocaleString();
+  if (cidUnmatchedCount) cidUnmatchedCount.textContent = Number(result.cid_unmatched_count ?? counts.cidUnmatched).toLocaleString();
   if (centralDeathCount) {
     centralDeathCount.textContent = Number(result.central_death_mismatch_count ?? counts.centralDeath).toLocaleString();
   }
@@ -520,8 +536,8 @@ function showResultData(result, options = {}) {
   sortCol = -1;
   sortDir = 'asc';
 
-  document.getElementById('matched-count').textContent = `จับคู่ได้: ${(result.matched_count || 0).toLocaleString()}`;
-  document.getElementById('unmatched-count').textContent = `จับคู่ไม่ได้: ${(result.unmatched_count || 0).toLocaleString()}`;
+  document.getElementById('matched-count').textContent = `จับคู่รวมได้: ${(result.matched_count || 0).toLocaleString()}`;
+  document.getElementById('unmatched-count').textContent = `จับคู่รวมไม่ได้: ${(result.unmatched_count || 0).toLocaleString()}`;
 
   const filename = result.filename || options.filename || document.getElementById('file-name')?.textContent || '-';
   document.getElementById('file-name').textContent = filename;
@@ -712,7 +728,17 @@ function renderResultsTable() {
       bodyHtml += `<tr class="${isUnmatched ? 'unmatched' : ''}${isCentralDeath ? ' central-death-mismatch' : ''}">`;
       displayColumns.forEach(col => {
         const value = row[col] !== null && row[col] !== undefined ? row[col] : '';
-        bodyHtml += `<td>${escapeHtml(String(value))}</td>`;
+        if (col === 'เงื่อนไขที่ใช้') {
+          const pillClass = value === 'PID' ? 'match-pill-pid' : (value === 'CID' ? 'match-pill-cid' : 'match-pill-none');
+          const icon = value === 'PID' ? '✓' : (value === 'CID' ? '↔' : '−');
+          bodyHtml += `<td class="result-symbol-cell"><span class="result-symbol-pill ${pillClass}" title="${escapeHtml(String(value))}">${icon} ${escapeHtml(String(value))}</span></td>`;
+        } else if (col === 'เทียบตาย') {
+          const pillClass = value === 'พบข้อมูล' ? 'death-pill-found' : (value === 'ไม่พบข้อมูล' ? 'death-pill-clear' : (value === 'ใช้ไม่ได้' ? 'death-pill-unavailable' : 'death-pill-skip'));
+          const icon = value === 'พบข้อมูล' ? '!' : (value === 'ไม่พบข้อมูล' ? '✓' : (value === 'ใช้ไม่ได้' ? '×' : '−'));
+          bodyHtml += `<td class="result-symbol-cell"><span class="result-symbol-pill ${pillClass}" title="${escapeHtml(String(value))}">${icon}</span></td>`;
+        } else {
+          bodyHtml += `<td>${escapeHtml(String(value))}</td>`;
+        }
       });
       bodyHtml += '</tr>';
     });

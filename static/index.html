@@ -7,7 +7,7 @@
   <title>Data Exchange Tools</title>
   <link rel="icon" href="/static/images/favicon.ico">
   <link rel="apple-touch-icon" href="/static/images/logo.png">
-  <link rel="stylesheet" href="/static/css/style.css?v=0.1.0">
+  <link rel="stylesheet" href="/static/css/style.css?v=0.1.1">
 </head>
 <body>
 
@@ -276,7 +276,7 @@
         </button>
       </div>
       <div class="sidebar-footer">
-        <span class="version-text">v0.1.0</span>
+        <span class="version-text">v0.1.1</span>
       </div>
     </aside>
 
@@ -384,8 +384,8 @@
               <h3>ผลลัพธ์การแปลงข้อมูล</h3>
             </div>
             <div class="stats-badges">
-              <span class="badge badge-success" id="matched-count">จับคู่ได้: 0</span>
-              <span class="badge badge-warning" id="unmatched-count">จับคู่ไม่ได้: 0</span>
+              <span class="badge badge-success" id="matched-count">จับคู่รวมได้: 0</span>
+              <span class="badge badge-warning" id="unmatched-count">จับคู่รวมไม่ได้: 0</span>
             </div>
           </div>
 
@@ -395,15 +395,25 @@
               <strong id="filter-count-all">0</strong>
               <span class="result-filter-desc">ข้อมูลทั้งหมดหลังแปลง</span>
             </button>
-            <button type="button" class="result-filter-card" data-filter="matched" onclick="setResultFilter('matched')">
-              <span class="result-filter-title">จับคู่ข้อมูลได้</span>
-              <strong id="filter-count-matched">0</strong>
-              <span class="result-filter-desc">มีข้อมูลใน HIS</span>
+            <button type="button" class="result-filter-card" data-filter="pidMatched" onclick="setResultFilter('pidMatched')">
+              <span class="result-filter-title">จับคู่ PID ได้</span>
+              <strong id="filter-count-pid-matched">0</strong>
+              <span class="result-filter-desc">ตรง HOSCODE + PID ใน HIS</span>
             </button>
-            <button type="button" class="result-filter-card" data-filter="unmatched" onclick="setResultFilter('unmatched')">
-              <span class="result-filter-title">จับคู่ข้อมูลไม่ได้</span>
-              <strong id="filter-count-unmatched">0</strong>
-              <span class="result-filter-desc">ไม่พบข้อมูลใน HIS</span>
+            <button type="button" class="result-filter-card" data-filter="pidUnmatched" onclick="setResultFilter('pidUnmatched')">
+              <span class="result-filter-title">จับคู่ PID ไม่ได้</span>
+              <strong id="filter-count-pid-unmatched">0</strong>
+              <span class="result-filter-desc">ส่งต่อไปตรวจด้วย CID</span>
+            </button>
+            <button type="button" class="result-filter-card" data-filter="cidMatched" onclick="setResultFilter('cidMatched')">
+              <span class="result-filter-title">จับคู่ CID ได้</span>
+              <strong id="filter-count-cid-matched">0</strong>
+              <span class="result-filter-desc">CID 9 หลัก + SEX + BIRTH + NAME + LNAME</span>
+            </button>
+            <button type="button" class="result-filter-card" data-filter="cidUnmatched" onclick="setResultFilter('cidUnmatched')">
+              <span class="result-filter-title">จับคู่ CID ไม่ได้</span>
+              <strong id="filter-count-cid-unmatched">0</strong>
+              <span class="result-filter-desc">ไม่พบข้อมูลด้วยทั้งสองเงื่อนไข</span>
             </button>
             <button type="button" class="result-filter-card result-filter-card-warning hidden" data-filter="centralDeath" id="filter-card-central-death" onclick="setResultFilter('centralDeath')">
               <span class="result-filter-title">เทียบข้อมูลการตายกับส่วนกลาง</span>
@@ -528,6 +538,20 @@
                 <span>ออก key เมื่อ</span>
                 <code id="settings-api-key-registered-at">-</code>
               </div>
+              <div class="readonly-api-item">
+                <span>Heartbeat ล่าสุด</span>
+                <code id="settings-api-last-heartbeat-at">-</code>
+              </div>
+              <div class="readonly-api-item">
+                <span>ข้อผิดพลาดล่าสุด</span>
+                <code id="settings-api-last-heartbeat-error">-</code>
+              </div>
+            </div>
+            <div class="readonly-api-actions">
+              <button class="btn btn-secondary" id="settings-api-retry-btn" onclick="retryApiCenterHeartbeat()">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
+                ลงทะเบียน/ส่ง Heartbeat ใหม่
+              </button>
             </div>
           </div>
         </div>
@@ -571,10 +595,10 @@
 </div>
 
 <!-- Scripts -->
-<script src="/static/js/utils.js?v=0.1.0"></script>
-<script src="/static/js/auth.js?v=0.1.0"></script>
-<script src="/static/js/config.js?v=0.1.0"></script>
-<script src="/static/js/upload.js?v=0.1.0"></script>
-<script src="/static/js/app.js?v=0.1.0"></script>
+<script src="/static/js/utils.js?v=0.1.1"></script>
+<script src="/static/js/auth.js?v=0.1.1"></script>
+<script src="/static/js/config.js?v=0.1.1"></script>
+<script src="/static/js/upload.js?v=0.1.1"></script>
+<script src="/static/js/app.js?v=0.1.1"></script>
 </body>
 </html>
