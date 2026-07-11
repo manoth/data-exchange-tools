@@ -1479,6 +1479,7 @@ table {
   gap: 8px;
   min-width: 0;
   flex-wrap: wrap;
+  margin-bottom: 0;
 }
 
 .life-status-filter {
@@ -1501,10 +1502,26 @@ table {
   border-color: rgba(63, 182, 198, 0.6);
 }
 
-.life-status-filter.active {
+.life-status-filter-all {
   color: var(--accent-blue);
-  border-color: var(--accent-blue);
   background: rgba(63, 182, 198, 0.12);
+  border-color: rgba(63, 182, 198, 0.45);
+}
+
+.life-status-filter-alive {
+  color: var(--success);
+  background: rgba(74, 222, 128, 0.1);
+  border-color: rgba(74, 222, 128, 0.42);
+}
+
+.life-status-filter-warning {
+  color: var(--warning);
+  background: rgba(251, 191, 36, 0.1);
+  border-color: rgba(251, 191, 36, 0.42);
+}
+
+.life-status-filter.active {
+  box-shadow: 0 0 0 2px currentColor inset, 0 5px 16px rgba(0, 0, 0, 0.18);
 }
 
 .life-status-filter-warning.active {
@@ -1526,6 +1543,14 @@ table {
 
 .export-btn {
   flex: 0 0 auto;
+}
+
+.export-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
   margin-left: auto;
 }
 
@@ -2396,6 +2421,12 @@ table {
   .export-btn,
   .rows-select {
     align-self: flex-start;
+  }
+
+  .export-actions {
+    width: 100%;
+    margin-left: 0;
+    justify-content: flex-start;
   }
 
   .datatable-info {

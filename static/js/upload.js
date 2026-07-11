@@ -726,7 +726,7 @@ async function openHistoryDetail(fileId) {
 
 function downloadHistoryFile(fileId) {
   currentFileId = fileId;
-  exportExcel();
+  exportExcel('all');
 }
 
 /**
@@ -927,7 +927,7 @@ function renderPagination(totalPages) {
 /**
  * Export results to Excel
  */
-async function exportExcel() {
+async function exportExcel(scope = 'all') {
   if (!currentFileId) {
     showToast('ไม่มีข้อมูลสำหรับส่งออก', 'error');
     return;
@@ -938,7 +938,13 @@ async function exportExcel() {
   try {
     const response = await api('/api/export', {
       method: 'POST',
-      body: JSON.stringify({ file_id: currentFileId })
+      body: JSON.stringify({
+        file_id: currentFileId,
+        scope,
+        result_filter: activeResultFilter,
+        life_status_filter: activeLifeStatusFilter,
+        search: searchTerm
+      })
     });
 
     hideLoading();
@@ -962,7 +968,7 @@ async function exportExcel() {
       a.click();
       document.body.removeChild(a);
       window.URL.revokeObjectURL(url);
-      showToast('ส่งออกไฟล์ Excel สำเร็จ', 'success');
+      showToast(scope === 'filtered' ? 'ส่งออก Excel ตามที่กรองสำเร็จ' : 'ส่งออก Excel ทั้งหมดสำเร็จ', 'success');
     } else if (response && response.success === false) {
       throw new Error(response.message || 'Export failed');
     }

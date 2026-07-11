@@ -32,7 +32,7 @@ from config import (
 from auth import authenticate_user, create_token, verify_token
 from models import (
     ConfigModel, LoginRequest, LoginResponse, ChangeAdminPasswordRequest,
-    TransformRequest, UploadResponse, TransformResponse,
+    TransformRequest, ExportRequest, UploadResponse, TransformResponse,
     HistoryItem, ApiResponse
 )
 from transform import process_upload, transform_data, export_excel
@@ -1736,11 +1736,70 @@ async def download_file(
 
 @app.post("/api/export")
 async def export_file(
-    request: TransformRequest,
+    request: ExportRequest,
     current_user: dict = Depends(get_current_user)
 ):
-    """Alias สำหรับดาวน์โหลดไฟล์ Excel ที่แปลงแล้ว"""
-    return await download_file(request.file_id, current_user)
+    """ส่งออก Excel ทั้งหมดหรือตามตัวกรองที่เลือกบนหน้าเว็บ"""
+    if request.scope != "filtered":
+        return await download_file(request.file_id, current_user)
+
+    upload_info = upload_store.get(request.file_id)
+    if not upload_info or upload_info.get("status") != "completed":
+        raise HTTPException(status_code=404, detail="ไม่พบผลลัพธ์ที่พร้อมส่งออก")
+
+    rows = upload_info.get("transformed_data", [])
+    columns = upload_info.get("transformed_columns", [])
+
+    def true_flag(value):
+        return value is True or str(value).strip().lower() in {"1", "true", "yes"}
+
+    def matches_result(row):
+        pid_matched = true_flag(row.get("_pid_matched")) or row.get("_match_method") == "pid"
+        cid_matched = true_flag(row.get("_cid_matched")) or row.get("_match_method") == "cid"
+        matched = true_flag(row.get("_matched")) or pid_matched or cid_matched
+        central_death = true_flag(row.get("_central_death_mismatch"))
+        filters = {
+            "pidMatched": pid_matched,
+            "pidUnmatched": not pid_matched,
+            "cidMatched": cid_matched,
+            "cidUnmatched": not matched,
+            "centralDeath": central_death,
+        }
+        return filters.get(request.result_filter, True)
+
+    def matches_life_status(row):
+        central_death = true_flag(row.get("_central_death_mismatch"))
+        if request.life_status_filter == "alive":
+            return not central_death
+        if request.life_status_filter == "deathUndischarged":
+            return central_death
+        return True
+
+    search = request.search.strip().casefold()
+    display_columns = [column for column in columns if not str(column).startswith("_")]
+
+    def matches_search(row):
+        if not search:
+            return True
+        return any(search in str(row.get(column, "")).casefold() for column in display_columns)
+
+    filtered_rows = [
+        row for row in rows
+        if matches_result(row) and matches_life_status(row) and matches_search(row)
+    ]
+    if not filtered_rows:
+        raise HTTPException(status_code=400, detail="ไม่พบข้อมูลตามตัวกรองสำหรับส่งออก")
+
+    filtered_path = export_excel(
+        filtered_rows,
+        columns,
+        f"filtered_{upload_info.get('original_filename', 'result.xlsx')}"
+    )
+    return FileResponse(
+        path=filtered_path,
+        filename=os.path.basename(filtered_path),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
 
 
 @app.get("/api/history")

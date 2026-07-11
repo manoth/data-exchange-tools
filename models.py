@@ -40,6 +40,15 @@ class TransformRequest(BaseModel):
     hoscodes: List[str] = Field(default_factory=list)
 
 
+class ExportRequest(BaseModel):
+    """โมเดลสำหรับส่งออกผลลัพธ์ทั้งหมดหรือตามตัวกรองหน้าเว็บ"""
+    file_id: str
+    scope: str = "all"
+    result_filter: str = "all"
+    life_status_filter: str = "all"
+    search: str = ""
+
+
 class UploadResponse(BaseModel):
     """โมเดลสำหรับ response การอัพโหลดไฟล์"""
     file_id: str

@@ -7,7 +7,7 @@
   <title>Data Exchange Tools</title>
   <link rel="icon" href="/static/images/favicon.ico">
   <link rel="apple-touch-icon" href="/static/images/logo.png">
-  <link rel="stylesheet" href="/static/css/style.css?v=0.1.1">
+  <link rel="stylesheet" href="/static/css/style.css?v=0.1.1-2">
 </head>
 <body>
 
@@ -423,6 +423,17 @@
           </div>
 
           <div class="controls-bar">
+            <div class="life-status-filters hidden" id="life-status-filters" aria-label="กรองสถานะการเสียชีวิต">
+              <button type="button" class="life-status-filter life-status-filter-all active" data-life-filter="all" onclick="setLifeStatusFilter('all')">
+                ทั้งหมด <strong id="life-count-all">0</strong> คน
+              </button>
+              <button type="button" class="life-status-filter life-status-filter-alive" data-life-filter="alive" onclick="setLifeStatusFilter('alive')">
+                ยังมีชีวิตอยู่ <strong id="life-count-alive">0</strong> คน
+              </button>
+              <button type="button" class="life-status-filter life-status-filter-warning" data-life-filter="deathUndischarged" onclick="setLifeStatusFilter('deathUndischarged')">
+                เสียชีวิตเมื่อเทียบข้อมูลแต่ยังไม่จำหน่าย <strong id="life-count-death">0</strong> คน
+              </button>
+            </div>
             <div class="controls-primary-row">
               <div class="search-wrapper">
                 <span class="search-icon">
@@ -430,10 +441,16 @@
                 </span>
                 <input type="text" class="search-input" id="search-input" placeholder="ค้นหา..." oninput="handleSearch(this.value)">
               </div>
-              <button class="btn btn-success export-btn" onclick="exportExcel()">
-                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
-                ส่งออก Excel
-              </button>
+              <div class="export-actions">
+                <button class="btn btn-outline export-btn" onclick="exportExcel('all')" title="ส่งออกผลลัพธ์ทั้งหมด">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+                  Excel ทั้งหมด
+                </button>
+                <button class="btn btn-success export-btn" onclick="exportExcel('filtered')" title="ส่งออกเฉพาะข้อมูลตามตัวกรองและคำค้นหา">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+                  Excel ตามที่กรอง
+                </button>
+              </div>
             </div>
             <div class="controls-secondary-row">
               <div class="controls-secondary-left">
@@ -443,17 +460,6 @@
                   <option value="100">100 แถว</option>
                   <option value="200">200 แถว</option>
                 </select>
-                <div class="life-status-filters hidden" id="life-status-filters" aria-label="กรองสถานะการเสียชีวิต">
-                  <button type="button" class="life-status-filter active" data-life-filter="all" onclick="setLifeStatusFilter('all')">
-                    ทั้งหมด <strong id="life-count-all">0</strong> คน
-                  </button>
-                  <button type="button" class="life-status-filter" data-life-filter="alive" onclick="setLifeStatusFilter('alive')">
-                    ยังมีชีวิตอยู่ <strong id="life-count-alive">0</strong> คน
-                  </button>
-                  <button type="button" class="life-status-filter life-status-filter-warning" data-life-filter="deathUndischarged" onclick="setLifeStatusFilter('deathUndischarged')">
-                    เสียชีวิตเมื่อเทียบข้อมูลแต่ยังไม่จำหน่าย <strong id="life-count-death">0</strong> คน
-                  </button>
-                </div>
               </div>
               <div class="datatable-info" id="datatable-info">ทั้งหมด 0 แถว | แสดงผลหลังกรอง 0 แถว</div>
             </div>
@@ -611,7 +617,7 @@
 <script src="/static/js/utils.js?v=0.1.1"></script>
 <script src="/static/js/auth.js?v=0.1.1"></script>
 <script src="/static/js/config.js?v=0.1.1"></script>
-<script src="/static/js/upload.js?v=0.1.1"></script>
+<script src="/static/js/upload.js?v=0.1.1-2"></script>
 <script src="/static/js/app.js?v=0.1.1"></script>
 </body>
 </html>
