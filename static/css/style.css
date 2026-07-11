@@ -1720,8 +1720,10 @@ table {
 }
 
 .result-filter-card {
+  position: relative;
+  overflow: hidden;
   min-height: 132px;
-  padding: 18px 18px 16px;
+  padding: 20px 54px 18px 20px;
   text-align: left;
   border-radius: var(--radius-md);
   border: 1px solid var(--border-color);
@@ -1734,7 +1736,7 @@ table {
   justify-content: space-between;
   gap: 8px;
   box-shadow: none;
-  transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease;
+  transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
 }
 
 .result-filter-card:hover {
@@ -1744,15 +1746,55 @@ table {
 }
 
 .result-filter-card.active {
-  border-color: var(--accent-blue);
-  background: rgba(63, 182, 198, 0.14);
-  box-shadow: 0 0 0 1px rgba(63, 182, 198, 0.16) inset;
+  border: 2px solid var(--accent-blue);
+  background: rgba(39, 135, 148, 0.26);
+  box-shadow: 0 0 0 1px rgba(63, 182, 198, 0.24) inset, 0 10px 26px rgba(27, 146, 164, 0.2);
+  transform: translateY(-2px);
+}
+
+.result-filter-card.active::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 5px;
+  background: var(--accent-blue);
+}
+
+.result-filter-card.active::after {
+  content: "✓";
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--accent-blue);
+  color: #06272c;
+  font-size: 1rem;
+  font-weight: 900;
+  box-shadow: 0 4px 12px rgba(27, 146, 164, 0.34);
+}
+
+.result-filter-card.active .result-filter-title,
+.result-filter-card.active strong {
+  color: #effeff;
 }
 
 .result-filter-card-warning.active {
   border-color: var(--warning);
-  background: rgba(251, 191, 36, 0.12);
-  box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.14) inset;
+  background: rgba(251, 191, 36, 0.18);
+  box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.2) inset, 0 10px 26px rgba(251, 191, 36, 0.14);
+}
+
+.result-filter-card-warning.active::before,
+.result-filter-card-warning.active::after {
+  background: var(--warning);
+}
+
+.result-filter-card-warning.active::after {
+  color: #332405;
 }
 
 .result-filter-card-unavailable {
