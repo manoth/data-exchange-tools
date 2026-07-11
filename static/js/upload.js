@@ -465,6 +465,14 @@ function updateLifeStatusFilters() {
   });
 }
 
+function updateDataCorrectExportAction() {
+  const button = document.getElementById('btn-export-data-correct');
+  if (!button) return;
+  const pidUnmatchedCount = allData.filter(row => !isPidMatched(row)).length;
+  const shouldShow = activeResultFilter === 'pidUnmatched' && pidUnmatchedCount > 0;
+  button.classList.toggle('hidden', !shouldShow);
+}
+
 function setLifeStatusFilter(filterName) {
   activeLifeStatusFilter = filterName;
   updateLifeStatusFilters();
@@ -564,6 +572,7 @@ function setResultFilter(filterName) {
     central_death_lookup_message: centralDeathLookupMessage
   });
   updateLifeStatusFilters();
+  updateDataCorrectExportAction();
   applyResultFilters(true);
 }
 
@@ -607,6 +616,7 @@ function showResultData(result, options = {}) {
 
   updateResultFilterCards(result);
   updateLifeStatusFilters();
+  updateDataCorrectExportAction();
   applyResultFilters(false);
   renderResultsTable();
 }
@@ -975,6 +985,50 @@ async function exportExcel(scope = 'all') {
   } catch (error) {
     hideLoading();
     showToast(error.message || 'เกิดข้อผิดพลาดในการส่งออกไฟล์', 'error');
+  }
+}
+
+async function exportDataCorrect() {
+  if (!currentFileId || activeResultFilter !== 'pidUnmatched') {
+    showToast('กรุณาเลือกตัวกรอง จับคู่ PID ไม่ได้ ก่อนส่งออก', 'warning');
+    return;
+  }
+
+  showLoading();
+  try {
+    const response = await api('/api/export/data-correct', {
+      method: 'POST',
+      body: JSON.stringify({ file_id: currentFileId })
+    });
+    hideLoading();
+
+    if (response && response instanceof Response) {
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      const disposition = response.headers.get('content-disposition') || '';
+      const filenameMatch = disposition.match(/filename[^;=\n]*=(['"]?)([^'"\n]*?)\1(;|$)/);
+      link.href = url;
+      link.download = filenameMatch?.[2] ? decodeURIComponent(filenameMatch[2]) : 'F43_DATA_CORRECT.zip';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      const rowCount = response.headers.get('x-data-correct-rows');
+      const countText = rowCount ? ` ${Number(rowCount).toLocaleString()} รายการ` : '';
+      showToast(`สร้าง 43 แฟ้ม DATA_CORRECT สำเร็จ${countText}`, 'success');
+      return;
+    }
+
+    throw new Error(response?.detail || response?.message || 'ไม่สามารถสร้าง DATA_CORRECT ได้');
+  } catch (error) {
+    hideLoading();
+    showSweetAlert({
+      type: 'warning',
+      title: 'ยังสร้าง DATA_CORRECT ไม่ได้',
+      message: error.message || 'กรุณาตรวจสอบ hospitalcode และข้อมูล PID ของหน่วยบริการ',
+      confirmText: 'ตกลง'
+    });
   }
 }
 

@@ -1802,6 +1802,100 @@ async def export_file(
     )
 
 
+@app.post("/api/export/data-correct")
+async def export_data_correct(
+    request: TransformRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """สร้าง DATA_CORRECT.txt สำหรับ PERSON แล้วบีบอัดแบบ 43 แฟ้ม."""
+    upload_info = upload_store.get(request.file_id)
+    if not upload_info or upload_info.get("status") != "completed":
+        raise HTTPException(status_code=404, detail="ไม่พบผลลัพธ์ที่พร้อมส่งออก")
+
+    hospital = _read_hospital_info_from_his()
+    hospitalcode = str(hospital.get("facility_code") or "").strip()
+    if not hospitalcode:
+        raise HTTPException(
+            status_code=400,
+            detail="ไม่พบ hospitalcode ใน opdconfig กรุณาตรวจสอบการตั้งค่าฐานข้อมูล HIS"
+        )
+
+    rows = upload_info.get("transformed_data", [])
+    columns = upload_info.get("transformed_columns", [])
+    column_by_name = {str(column).upper(): column for column in columns}
+    hoscode_column = column_by_name.get("HOSCODE") or column_by_name.get("HOSPCODE")
+    pid_column = column_by_name.get("PID")
+    if not hoscode_column or not pid_column:
+        raise HTTPException(
+            status_code=400,
+            detail="ไฟล์นี้ไม่มีคอลัมน์ HOSCODE/HOSPCODE หรือ PID สำหรับสร้าง DATA_CORRECT"
+        )
+
+    def normalize_cell(value):
+        if value is None:
+            return ""
+        if isinstance(value, float) and value.is_integer():
+            return str(int(value))
+        return str(value).strip()
+
+    def is_pid_matched(row):
+        value = row.get("_pid_matched")
+        return (
+            value is True
+            or str(value).strip().lower() in {"1", "true", "yes"}
+            or row.get("_match_method") == "pid"
+        )
+
+    correction_keys = []
+    seen = set()
+    for row in rows:
+        row_hoscode = normalize_cell(row.get(hoscode_column))
+        row_pid = normalize_cell(row.get(pid_column))
+        if row_hoscode != hospitalcode or not row_pid or is_pid_matched(row):
+            continue
+        key = (row_hoscode, row_pid)
+        if key not in seen:
+            seen.add(key)
+            correction_keys.append(key)
+
+    if not correction_keys:
+        raise HTTPException(
+            status_code=400,
+            detail=f"ไม่พบรายการ PERSON ที่จับคู่ PID ไม่ได้ของหน่วยบริการ {hospitalcode}"
+        )
+
+    now = datetime.now()
+    d_update = now.strftime("%Y%m%d%H%M%S")
+    buddhist_timestamp = f"{now.year + 543:04d}{now.strftime('%m%d%H%M%S')}"
+    archive_name = f"F43_{hospitalcode}_{buddhist_timestamp}.zip"
+    archive_path = os.path.join(UPLOADS_DIR, archive_name)
+    text_path = os.path.join(UPLOADS_DIR, f"DATA_CORRECT_{uuid.uuid4().hex}.txt")
+
+    try:
+        with open(text_path, "w", encoding="utf-8-sig", newline="") as text_file:
+            text_file.write("HOSPCODE|TABLENAME|DATA_CORRECT|D_UPDATE\r\n")
+            for row_hoscode, row_pid in correction_keys:
+                data_correct = json.dumps(
+                    {"HOSPCODE": row_hoscode, "PID": row_pid},
+                    ensure_ascii=False,
+                    separators=(",", ":")
+                )
+                text_file.write(f"{row_hoscode}|PERSON|{data_correct}|{d_update}\r\n")
+
+        with zipfile.ZipFile(archive_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            archive.write(text_path, arcname="DATA_CORRECT.txt")
+    finally:
+        if os.path.exists(text_path):
+            os.remove(text_path)
+
+    return FileResponse(
+        path=archive_path,
+        filename=archive_name,
+        media_type="application/octet-stream",
+        headers={"X-Data-Correct-Rows": str(len(correction_keys))}
+    )
+
+
 @app.get("/api/history")
 async def get_history(current_user: dict = Depends(get_current_user)):
     """ดึงประวัติการอัพโหลด/แปลงข้อมูล"""
