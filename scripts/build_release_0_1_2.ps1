@@ -4,7 +4,7 @@ $ProjectDir = Split-Path -Parent $PSScriptRoot
 Set-Location $ProjectDir
 
 $Version = "0.1.2"
-$ReleaseNotes = "เพิ่มระบบตรวจสอบคุณภาพข้อมูล ปรับปรุงการตรวจสอบสถานะการเสียชีวิต และรองรับ MariaDB 5.x ถึงรุ่นปัจจุบัน"
+$ReleaseNotes = "Data quality reports, death audit improvements, and MariaDB 5.x through current compatibility"
 
 Write-Host "Preparing Data Exchange Tools v$Version" -ForegroundColor Cyan
 

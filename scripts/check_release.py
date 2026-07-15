@@ -41,6 +41,13 @@ def main() -> None:
         raise SystemExit(f"Release check failed: missing {notes.name}")
     if not build_script.is_file():
         raise SystemExit(f"Release check failed: missing {build_script.relative_to(ROOT)}")
+    try:
+        build_script.read_bytes().decode("ascii")
+    except UnicodeDecodeError:
+        raise SystemExit(
+            "Release check failed: PowerShell build script must contain ASCII only "
+            "for Windows PowerShell 5.1 compatibility"
+        )
 
     for path in sorted(ROOT.glob("*.py")) + sorted((ROOT / "scripts").glob("*.py")):
         py_compile.compile(str(path), doraise=True)
