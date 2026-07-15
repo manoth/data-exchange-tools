@@ -157,6 +157,38 @@ function showSweetAlert(options = {}) {
   overlay.querySelector('.sweet-alert-confirm').focus();
 }
 
+function showConfirmAlert(options = {}) {
+  return new Promise(resolve => {
+    const existing = document.querySelector('.sweet-alert-overlay');
+    if (existing) existing.remove();
+
+    const overlay = document.createElement('div');
+    overlay.className = 'sweet-alert-overlay';
+    overlay.innerHTML = `
+      <div class="sweet-alert sweet-alert-warning" role="dialog" aria-modal="true" aria-labelledby="confirm-alert-title">
+        <div class="sweet-alert-icon"><svg xmlns="http://www.w3.org/2000/svg" width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg></div>
+        <h3 id="confirm-alert-title">${escapeHtml(options.title || 'ยืนยันการดำเนินการ')}</h3>
+        <p>${escapeHtml(options.message || '')}</p>
+        <div class="sweet-alert-actions">
+          <button type="button" class="btn btn-secondary confirm-alert-cancel">${escapeHtml(options.cancelText || 'ยกเลิก')}</button>
+          <button type="button" class="btn btn-danger confirm-alert-confirm">${escapeHtml(options.confirmText || 'ยืนยัน')}</button>
+        </div>
+      </div>`;
+
+    const close = result => {
+      overlay.remove();
+      resolve(result);
+    };
+    overlay.addEventListener('click', event => {
+      if (event.target === overlay) close(false);
+    });
+    overlay.querySelector('.confirm-alert-cancel').addEventListener('click', () => close(false));
+    overlay.querySelector('.confirm-alert-confirm').addEventListener('click', () => close(true));
+    document.body.appendChild(overlay);
+    overlay.querySelector('.confirm-alert-cancel').focus();
+  });
+}
+
 // ---- Loading Overlay ----
 function showLoading() {
   const overlay = document.getElementById('loading-overlay');

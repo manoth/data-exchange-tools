@@ -14,6 +14,8 @@ const routeByPage = {
 const routeBySection = {
   upload: '/upload',
   history: '/history',
+  'data-quality': '/data-quality',
+  'death-audit': '/death-audit',
   settings: '/settings',
   manual: '/manual'
 };
@@ -173,6 +175,10 @@ function showSection(sectionName, updateRoute = true) {
     loadSettingsStatus();
   } else if (sectionName === 'history') {
     loadHistory();
+  } else if (sectionName === 'death-audit') {
+    initDeathAudit();
+  } else if (sectionName === 'data-quality') {
+    initDataQualityReports();
   } else if (sectionName === 'manual') {
     loadManualContent();
   }
@@ -222,6 +228,8 @@ async function navigateToRoute(route, replace = false) {
     const sectionByRoute = {
       '/upload': 'upload',
       '/history': 'history',
+      '/death-audit': 'death-audit',
+      '/data-quality': 'data-quality',
       '/settings': 'settings',
       '/manual': 'manual'
     };

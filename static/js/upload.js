@@ -218,7 +218,10 @@ async function uploadFile(file) {
     if (result && result.success) {
       currentFileId = result.file_id;
       availableFacilities = result.facilities || [];
-      selectedHoscodes = [];
+      const defaultHoscode = String(result.default_hoscode || '').trim();
+      selectedHoscodes = defaultHoscode && availableFacilities.some(
+        item => String(item.hoscode || '').trim() === defaultHoscode
+      ) ? [defaultHoscode] : [];
 
       // Show file info
       document.getElementById('file-name').textContent = file.name;
@@ -690,16 +693,26 @@ async function loadHistory() {
   tbody.innerHTML = items.map(item => {
     const statusClass = item.status === 'completed' ? 'badge-success' : 'badge-info';
     const statusText = item.status === 'completed' ? 'แปลงสำเร็จ' : 'อัปโหลดแล้ว';
-    const action = item.status === 'completed'
-      ? `<div class="history-actions">
+    const completedActions = item.status === 'completed'
+      ? `
           <button class="btn history-icon-btn history-detail-btn" onclick='openHistoryDetail(${jsString(item.file_id)})' title="ดูรายละเอียด" aria-label="ดูรายละเอียด">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
           </button>
           <button class="btn history-icon-btn history-download-btn" onclick='downloadHistoryFile(${jsString(item.file_id)})' title="ดาวน์โหลด" aria-label="ดาวน์โหลด">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
-          </button>
-        </div>`
-      : '-';
+          </button>`
+      : '';
+    const resumeAction = item.status === 'completed' ? '' : `
+        <button class="btn history-icon-btn history-resume-btn" onclick='resumeHistory(${jsString(item.file_id)})' title="ดำเนินการต่อ" aria-label="ดำเนินการต่อ">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></svg>
+        </button>`;
+    const action = `<div class="history-actions">
+        ${resumeAction}
+        ${completedActions}
+        <button class="btn history-icon-btn history-delete-btn" onclick='deleteHistoryItem(${jsString(item.file_id)}, ${jsString(item.original_filename || '')})' title="ลบประวัติ" aria-label="ลบประวัติ">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v5"/><path d="M14 11v5"/></svg>
+        </button>
+      </div>`;
 
     return `<tr>
       <td>${escapeHtml(item.original_filename || '-')}</td>
@@ -709,6 +722,64 @@ async function loadHistory() {
       <td>${action}</td>
     </tr>`;
   }).join('');
+}
+
+async function resumeHistory(fileId) {
+  showLoading();
+  try {
+    const result = await api(`/api/history/${encodeURIComponent(fileId)}/resume`, { method: 'GET' });
+    if (!result?.success) throw new Error(result?.message || 'ไม่สามารถเปิดไฟล์เดิมได้');
+
+    showSection('upload', false);
+    currentFileId = result.file_id;
+    availableFacilities = result.facilities || [];
+    const defaultHoscode = String(result.default_hoscode || '').trim();
+    selectedHoscodes = defaultHoscode && availableFacilities.some(item => String(item.hoscode || '').trim() === defaultHoscode)
+      ? [defaultHoscode]
+      : [];
+    setHistoryDetailMode(false);
+    document.getElementById('upload-zone')?.classList.add('hidden');
+    document.getElementById('progress-container')?.classList.add('hidden');
+    document.getElementById('results-section')?.classList.add('hidden');
+    document.getElementById('file-info')?.classList.remove('hidden');
+    document.getElementById('btn-new-upload-top')?.classList.remove('hidden');
+    document.getElementById('file-name').textContent = result.filename || 'Exchange.xlsx';
+    document.getElementById('file-size').textContent = formatFileSize(Number(result.file_size || 0));
+    document.getElementById('file-rows').textContent = Number(result.total_rows || 0).toLocaleString();
+    renderPreviewTable(result.preview || [], result.columns || []);
+    renderFacilitySelector();
+    document.getElementById('preview-section')?.classList.remove('hidden');
+    if (typeof setRoute === 'function') setRoute('/upload', true);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    showToast('เปิดไฟล์เดิมแล้ว เลือกหน่วยบริการและดำเนินการต่อได้เลย', 'success');
+  } catch (error) {
+    showToast(error.message || 'ไม่สามารถดำเนินการต่อได้', 'error');
+  } finally {
+    hideLoading();
+  }
+}
+
+async function deleteHistoryItem(fileId, filename) {
+  const confirmed = await showConfirmAlert({
+    title: 'ลบประวัติรายการนี้?',
+    message: `ไฟล์ ${filename || '-'} และผลลัพธ์ที่เกี่ยวข้องจะถูกลบออกจากระบบ`,
+    confirmText: 'ลบประวัติ',
+    cancelText: 'ยกเลิก'
+  });
+  if (!confirmed) return;
+
+  showLoading();
+  try {
+    const result = await api(`/api/history/${encodeURIComponent(fileId)}`, { method: 'DELETE' });
+    if (!result?.success) throw new Error(result?.message || 'ลบประวัติไม่สำเร็จ');
+    if (currentFileId === fileId) resetUpload();
+    await loadHistory();
+    showToast('ลบประวัติเรียบร้อยแล้ว', 'success');
+  } catch (error) {
+    showToast(error.message || 'ลบประวัติไม่สำเร็จ', 'error');
+  } finally {
+    hideLoading();
+  }
 }
 
 async function openHistoryDetail(fileId) {

@@ -11,8 +11,8 @@ import hashlib
 import hmac
 import secrets
 from typing import Optional, Tuple
-import pymysql
 from cryptography.fernet import Fernet
+from db_compat import connect_compatible, database_error_message
 
 # กำหนด path สำหรับไฟล์ config
 # When bundled with PyInstaller, keep writable files beside the .exe instead of
@@ -319,31 +319,23 @@ def datetime_now_string() -> str:
 
 
 def test_connection(config_data: dict) -> dict:
-    """ทดสอบการเชื่อมต่อฐานข้อมูล MySQL"""
+    """ทดสอบการเชื่อมต่อฐานข้อมูล MariaDB/MySQL หลายรุ่น"""
+    connection = None
     try:
-        connection = pymysql.connect(
-            host=config_data.get("host", "localhost"),
-            port=int(config_data.get("port", 3306)),
-            database=config_data.get("database", ""),
-            user=config_data.get("username", ""),
-            password=config_data.get("password", ""),
-            charset="utf8mb4",
-            connect_timeout=10
-        )
-        connection.close()
-        return {"success": True, "message": "เชื่อมต่อฐานข้อมูลสำเร็จ"}
-    except pymysql.err.OperationalError as e:
-        error_code = e.args[0] if e.args else 0
-        if error_code == 1045:
-            return {"success": False, "message": "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง"}
-        elif error_code == 2003:
-            return {"success": False, "message": f"ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ {config_data.get('host')}:{config_data.get('port')} ได้ กรุณาตรวจสอบ host และ port"}
-        elif error_code == 1049:
-            return {"success": False, "message": f"ไม่พบฐานข้อมูล '{config_data.get('database')}'"}
-        else:
-            return {"success": False, "message": f"เกิดข้อผิดพลาดในการเชื่อมต่อ: {e}"}
+        connection, server = connect_compatible(config_data)
+        product = server.get("product") or "Database"
+        version = server.get("version") or "ไม่ทราบรุ่น"
+        charset = server.get("connection_charset") or "utf8"
+        return {
+            "success": True,
+            "message": f"เชื่อมต่อ {product} {version} สำเร็จ (charset: {charset})",
+            "server": server,
+        }
     except Exception as e:
-        return {"success": False, "message": f"เกิดข้อผิดพลาดที่ไม่คาดคิด: {e}"}
+        return {"success": False, "message": database_error_message(e, config_data)}
+    finally:
+        if connection:
+            connection.close()
 
 
 def is_configured() -> bool:

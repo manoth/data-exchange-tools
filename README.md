@@ -10,12 +10,21 @@
 - local admin เริ่มต้นคือ `admin` / `admin` และบังคับเปลี่ยนรหัสผ่านครั้งแรก
 - Login ด้วย `opduser.loginname` และ `opduser.passweb = MD5(password)`
 - ตั้งค่าฐานข้อมูล MySQL/MariaDB ของ HosXP ผ่านหน้าเว็บ
+- รองรับ MariaDB 5.x ถึงรุ่นปัจจุบัน โดย fallback charset สำหรับฐานรุ่นเก่าอัตโนมัติ
 - เข้ารหัสรหัสผ่านฐานข้อมูลด้วย Fernet ก่อนเก็บลง `config.json`
 - Agent เชื่อม API Center ด้วย Agent API Key แบบ 1 เครื่องต่อ 1 key โดยเก็บ key ในเครื่องแบบเข้ารหัส และแสดงเฉพาะสถานะ/prefix ในหน้า Settings
 - อัปโหลดไฟล์ `.xlsx` ที่มีคอลัมน์อย่างน้อย `cid`, `pid`, `name`, `lname`, `sex`, `birth`
 - คืนข้อมูลจริงจาก `person.cid` และรวม `person.pname`, `person.fname`, `person.lname` เป็น `full_name`
 - แสดงผลเป็นตารางตามคอลัมน์ของไฟล์ที่อัปโหลด และ export Excel ได้
+- ตรวจสอบสถานะการเสียชีวิตจาก PERSON เทียบ API Center พร้อมค้นหา กรอง เรียง และส่งออก Excel
+- ตรวจสอบคุณภาพข้อมูลจากรายงานที่ Control กำหนด โดย Agent ยอมรันเฉพาะคำสั่ง `SELECT`
 - รองรับ Windows แบบ build เป็น `.exe` และ Linux/Docker
+
+## Release ปัจจุบัน
+
+- Version: `v0.1.2`
+- รายละเอียด: [`RELEASE_NOTES_v0.1.2.md`](RELEASE_NOTES_v0.1.2.md)
+- ขั้นตอนเผยแพร่สำหรับผู้ดูแล: [`RELEASE_CHECKLIST_v0.1.2.md`](RELEASE_CHECKLIST_v0.1.2.md)
 
 ## วิธีรันบน Windows
 

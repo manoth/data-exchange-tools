@@ -7,7 +7,7 @@
   <title>Data Exchange Tools</title>
   <link rel="icon" href="/static/images/favicon.ico">
   <link rel="apple-touch-icon" href="/static/images/logo.png">
-  <link rel="stylesheet" href="/static/css/style.css?v=0.1.1-4">
+  <link rel="stylesheet" href="/static/css/style.css?v=0.1.2">
 </head>
 <body>
 
@@ -262,6 +262,18 @@
           </span>
           <span class="sidebar-label">ประวัติการแปลง</span>
         </button>
+        <button class="sidebar-item" data-section="death-audit" onclick="showSection('death-audit')">
+          <span class="sidebar-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          </span>
+          <span class="sidebar-label">ตรวจสอบสถานะการเสียชีวิต</span>
+        </button>
+        <button class="sidebar-item" data-section="data-quality" onclick="showSection('data-quality')">
+          <span class="sidebar-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m7 16 4-5 4 3 5-7"/></svg>
+          </span>
+          <span class="sidebar-label">ตรวจสอบคุณภาพข้อมูล</span>
+        </button>
         <button class="sidebar-item admin-only hidden" data-section="settings" onclick="showSection('settings')">
           <span class="sidebar-icon">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
@@ -276,7 +288,7 @@
         </button>
       </div>
       <div class="sidebar-footer">
-        <span class="version-text">v0.1.1</span>
+        <span class="version-text">v0.1.2</span>
       </div>
     </aside>
 
@@ -483,6 +495,149 @@
         </div>
       </div>
 
+      <!-- ==================== Data Quality Section ==================== -->
+      <div id="section-data-quality" class="section">
+        <div class="section-header">
+          <div class="section-title-group">
+            <span class="section-icon"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m7 16 4-5 4 3 5-7"/></svg></span>
+            <div><h2 id="data-quality-title">ตรวจสอบคุณภาพข้อมูล</h2><p class="text-secondary" id="data-quality-description">เลือกรายงานเพื่อตรวจข้อมูลผิดปกติหรือขัดแย้งใน HIS</p></div>
+          </div>
+          <button class="btn btn-secondary hidden" id="data-quality-back" onclick="showDataQualityReportList()">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/><path d="M9 12h10"/></svg>
+            กลับไปหน้ารายงานทั้งหมด
+          </button>
+        </div>
+
+        <div id="data-quality-notice" class="connection-status hidden"></div>
+        <div id="data-quality-report-list" class="data-quality-report-grid">
+          <div class="glass-card data-quality-loading"><div class="spinner"></div><span>กำลังโหลดรายงานจาก Control...</span></div>
+        </div>
+
+        <div id="data-quality-report-detail" class="hidden">
+          <div id="data-quality-criteria" class="data-quality-criteria glass-card hidden">
+            <button type="button" class="data-quality-criteria-toggle" id="data-quality-criteria-toggle" aria-expanded="false" aria-controls="data-quality-criteria-content" onclick="toggleDataQualityCriteria()">
+              <span class="data-quality-criteria-icon"><svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg></span>
+              <strong>หลักการตรวจจับข้อมูลผิดปกติ</strong>
+              <span class="data-quality-criteria-chevron" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></span>
+            </button>
+            <div id="data-quality-criteria-content" class="data-quality-criteria-content hidden"><p id="data-quality-criteria-text"></p></div>
+          </div>
+          <div class="result-filter-cards data-quality-summary-cards">
+            <button class="result-filter-card data-quality-card-all active" data-quality-status="all" onclick="setDataQualityStatus('all')">
+              <span class="result-filter-title">ทั้งหมด</span><strong id="data-quality-count-all">0</strong><span class="result-filter-desc">ข้อมูลล่าสุดที่นำมาตรวจสอบ</span>
+            </button>
+            <button class="result-filter-card data-quality-card-normal" data-quality-status="normal" onclick="setDataQualityStatus('normal')">
+              <span class="result-filter-title">ปกติ</span><strong id="data-quality-count-normal">0</strong><span class="result-filter-desc">น้ำหนักและส่วนสูงอยู่ในเกณฑ์</span>
+            </button>
+            <button class="result-filter-card result-filter-card-warning data-quality-card-abnormal" data-quality-status="abnormal" onclick="setDataQualityStatus('abnormal')">
+              <span class="result-filter-title">ผิดปกติ</span><strong id="data-quality-count-abnormal">0</strong><span class="result-filter-desc">ควรตรวจสอบหรือแก้ไขข้อมูล</span>
+            </button>
+          </div>
+          <div id="data-quality-abnormal-tabs" class="data-quality-abnormal-tabs hidden">
+            <button type="button" class="data-quality-tab-all active" data-quality-abnormal="all" onclick="setDataQualityAbnormalFilter('all')">ทั้งหมด <strong id="data-quality-tab-count-all">0</strong></button>
+            <button type="button" class="data-quality-tab-weight" data-quality-abnormal="weight" onclick="setDataQualityAbnormalFilter('weight')">น้ำหนักผิดปกติ <strong id="data-quality-tab-count-weight">0</strong></button>
+            <button type="button" class="data-quality-tab-height" data-quality-abnormal="height" onclick="setDataQualityAbnormalFilter('height')">ส่วนสูงผิดปกติ <strong id="data-quality-tab-count-height">0</strong></button>
+            <button type="button" class="data-quality-tab-both" data-quality-abnormal="both" onclick="setDataQualityAbnormalFilter('both')">ผิดปกติทั้งสองค่า <strong id="data-quality-tab-count-both">0</strong></button>
+          </div>
+          <div id="data-quality-filters" class="data-quality-filter-panel glass-card"></div>
+          <div class="controls-bar data-quality-controls">
+            <div class="controls-primary-row">
+              <div class="search-wrapper"><span class="search-icon"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg></span><input class="search-input" id="data-quality-search" placeholder="ค้นหา..." oninput="queueDataQualitySearch()"></div>
+              <div class="export-actions" id="data-quality-export">
+                <button class="btn btn-outline export-btn" onclick="exportDataQualityReport('all')" title="ส่งออกผลลัพธ์ทั้งหมด"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>Excel ทั้งหมด</button>
+                <button class="btn btn-success export-btn" onclick="exportDataQualityReport('filtered')" title="ส่งออกเฉพาะข้อมูลตามตัวกรองและคำค้นหา"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>Excel ตามที่กรอง</button>
+              </div>
+            </div>
+            <div class="controls-secondary-row"><div class="controls-secondary-left"><select class="rows-select" id="data-quality-page-size" onchange="changeDataQualityPageSize(this.value)"><option value="20">20 แถว</option><option value="50">50 แถว</option><option value="100">100 แถว</option><option value="200">200 แถว</option></select></div><div class="datatable-info" id="data-quality-info">ทั้งหมด 0 แถว | แสดงผลหลังกรอง 0 แถว</div></div>
+          </div>
+          <div class="table-container datatable-container"><table class="data-table data-quality-table"><thead id="data-quality-thead"></thead><tbody id="data-quality-tbody"></tbody></table></div>
+          <div class="pagination" id="data-quality-pagination"></div>
+        </div>
+      </div>
+
+      <!-- ==================== Death Status Audit Section ==================== -->
+      <div id="section-death-audit" class="section">
+        <div class="section-header death-audit-header">
+          <div class="section-title-group">
+            <span class="section-icon">
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            </span>
+            <div>
+              <h2>ตรวจสอบสถานะการเสียชีวิต</h2>
+              <p class="text-secondary">ตรวจบุคคลที่ HIS ระบุว่ายังมีชีวิต กับฐานข้อมูลการตายส่วนกลาง</p>
+            </div>
+          </div>
+          <button class="btn btn-secondary hidden" id="death-audit-run" onclick="startDeathAudit()">ตรวจสอบข้อมูลใหม่</button>
+        </div>
+
+        <div id="death-audit-empty" class="death-audit-empty">
+          <button class="btn btn-primary death-audit-start-button" onclick="startDeathAudit()">
+            <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="m19 8 2 2 4-4"/></svg>
+            เริ่มต้นตรวจสอบข้อมูลใหม่
+          </button>
+        </div>
+
+        <div id="death-audit-results" class="hidden">
+          <div id="death-audit-notice" class="connection-status hidden"></div>
+          <div class="result-filter-cards death-audit-filter-cards">
+          <button class="result-filter-card active" data-audit-filter="all" onclick="setDeathAuditFilter('all')">
+            <span class="result-filter-title">ทั้งหมด</span><strong id="death-count-all">0</strong><span class="result-filter-desc">PERSON ที่ HIS ระบุว่ายังมีชีวิต</span>
+          </button>
+          <button class="result-filter-card" data-audit-filter="alive" onclick="setDeathAuditFilter('alive')">
+            <span class="result-filter-title">ไม่พบข้อมูลการเสียชีวิต</span><strong id="death-count-alive">0</strong><span class="result-filter-desc">ไม่พบ CID ในฐานข้อมูลส่วนกลาง</span>
+          </button>
+          <button class="result-filter-card result-filter-card-warning" data-audit-filter="deceased" onclick="setDeathAuditFilter('deceased')">
+            <span class="result-filter-title">พบว่าเสียชีวิตแล้ว</span><strong id="death-count-deceased">0</strong><span class="result-filter-desc">HIS ยังระบุว่ามีชีวิต แต่ส่วนกลางพบการเสียชีวิต</span>
+          </button>
+          </div>
+
+          <div class="controls-bar death-audit-controls-bar">
+            <div class="controls-primary-row">
+              <div class="search-wrapper">
+                <span class="search-icon">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                </span>
+                <input class="search-input" id="death-audit-search" type="text" placeholder="ค้นหา..." oninput="queueDeathAuditSearch()">
+              </div>
+              <div class="export-actions">
+                <button class="btn btn-outline export-btn" onclick="exportDeathAudit('all')" title="ส่งออกผลตรวจสอบทั้งหมด">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+                  Excel ทั้งหมด
+                </button>
+                <button class="btn btn-success export-btn" onclick="exportDeathAudit('filtered')" title="ส่งออกเฉพาะข้อมูลตามตัวกรองและคำค้นหา">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+                  Excel ตามที่กรอง
+                </button>
+              </div>
+            </div>
+            <div class="controls-secondary-row">
+              <div class="controls-secondary-left">
+                <select class="rows-select" id="death-audit-page-size" onchange="changeDeathAuditPageSize(this.value)">
+                  <option value="20">20 แถว</option><option value="50">50 แถว</option><option value="100">100 แถว</option><option value="200">200 แถว</option>
+                </select>
+              </div>
+              <div class="datatable-info" id="death-audit-info">ยังไม่ได้ตรวจสอบข้อมูล</div>
+            </div>
+          </div>
+          <div class="table-container table-responsive datatable-container">
+          <table class="data-table death-audit-table">
+            <thead><tr>
+              <th class="sortable" data-audit-sort="PERSON_CID" onclick="setDeathAuditSort('PERSON_CID')">เลขประจำตัวประชาชน<span class="sort-indicator"></span></th>
+              <th class="sortable" data-audit-sort="PID" onclick="setDeathAuditSort('PID')">PID<span class="sort-indicator"></span></th>
+              <th class="sortable" data-audit-sort="FULL_NAME" onclick="setDeathAuditSort('FULL_NAME')">ชื่อ-สกุล<span class="sort-indicator"></span></th>
+              <th class="sortable" data-audit-sort="SEX" onclick="setDeathAuditSort('SEX')">เพศ<span class="sort-indicator"></span></th>
+              <th class="sortable" data-audit-sort="BIRTH" onclick="setDeathAuditSort('BIRTH')">วันเกิด<span class="sort-indicator"></span></th>
+              <th class="sortable" data-audit-sort="AGE" onclick="setDeathAuditSort('AGE')">อายุ (ปี)<span class="sort-indicator"></span></th>
+              <th class="sortable" data-audit-sort="HIS_STATUS" onclick="setDeathAuditSort('HIS_STATUS')">สถานะใน HIS<span class="sort-indicator"></span></th>
+              <th class="sortable" data-audit-sort="CENTRAL_STATUS" onclick="setDeathAuditSort('CENTRAL_STATUS')">ผลเทียบส่วนกลาง<span class="sort-indicator"></span></th>
+            </tr></thead>
+            <tbody id="death-audit-tbody"><tr><td colspan="8"><div class="empty-state"><p>กด “ตรวจสอบข้อมูลใหม่” เพื่อเริ่มตรวจสอบ</p></div></td></tr></tbody>
+          </table>
+          </div>
+          <div class="pagination" id="death-audit-pagination"></div>
+        </div>
+      </div>
+
       <!-- ==================== History Section ==================== -->
       <div id="section-history" class="section">
         <div class="section-header">
@@ -620,10 +775,12 @@
 </div>
 
 <!-- Scripts -->
-<script src="/static/js/utils.js?v=0.1.1"></script>
-<script src="/static/js/auth.js?v=0.1.1"></script>
-<script src="/static/js/config.js?v=0.1.1"></script>
-<script src="/static/js/upload.js?v=0.1.1-4"></script>
-<script src="/static/js/app.js?v=0.1.1"></script>
+<script src="/static/js/utils.js?v=0.1.2"></script>
+<script src="/static/js/auth.js?v=0.1.2"></script>
+<script src="/static/js/config.js?v=0.1.2"></script>
+  <script src="/static/js/upload.js?v=0.1.2"></script>
+<script src="/static/js/death-audit.js?v=0.1.2"></script>
+<script src="/static/js/data-quality.js?v=0.1.2"></script>
+<script src="/static/js/app.js?v=0.1.2"></script>
 </body>
 </html>

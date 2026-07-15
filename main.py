@@ -19,6 +19,7 @@ import urllib.error
 import time
 import zipfile
 import socket
+import re
 from datetime import datetime
 
 from fastapi import FastAPI, File, UploadFile, Request, HTTPException, Depends
@@ -32,14 +33,15 @@ from config import (
 from auth import authenticate_user, create_token, verify_token
 from models import (
     ConfigModel, LoginRequest, LoginResponse, ChangeAdminPasswordRequest,
-    TransformRequest, ExportRequest, UploadResponse, TransformResponse,
-    HistoryItem, ApiResponse
+    TransformRequest, ExportRequest, DeathAuditExportRequest, UploadResponse, TransformResponse,
+    DataQualityQueryRequest, DataQualityExportRequest, HistoryItem, ApiResponse
 )
-from transform import process_upload, transform_data, export_excel
+from transform import process_upload, transform_data, export_excel, lookup_central_death_pids
 from database import get_connection
+from db_compat import start_read_only_transaction
 
 # กำหนด path
-APP_VERSION = "0.1.1"
+APP_VERSION = "0.1.2"
 APP_HOST = os.environ.get("APP_HOST", "0.0.0.0")
 APP_PORT = int(os.environ.get("PORT", "8899"))
 APP_URL = os.environ.get("APP_URL", f"http://localhost:{APP_PORT}")
@@ -89,6 +91,13 @@ agent_heartbeat_state = {
     "facility_name": "",
 }
 agent_heartbeat_lock = threading.Lock()
+death_audit_lock = threading.Lock()
+data_quality_cache_lock = threading.Lock()
+data_quality_report_cache = {}
+death_audit_state = {
+    "status": "idle", "rows": [], "processed": 0, "total": 0,
+    "started_at": None, "completed_at": None, "message": "",
+}
 
 # ────────────────────────────────────────────
 # Startup Event
@@ -152,6 +161,19 @@ def _read_hospital_info_from_his() -> dict:
                 connection.close()
             except Exception:
                 pass
+
+
+def _default_hoscode_for_facilities(facilities: list) -> str:
+    """คืน hospitalcode ของเครื่องเมื่อรหัสนั้นมีอยู่ในไฟล์ที่อัปโหลด."""
+    hospital = _read_hospital_info_from_his()
+    local_code = str(hospital.get("facility_code") or "").strip()
+    if not local_code:
+        return ""
+    available_codes = {
+        str(item.get("hoscode") or "").strip()
+        for item in (facilities or [])
+    }
+    return local_code if local_code in available_codes else ""
 
 
 def _send_agent_heartbeat() -> dict:
@@ -543,6 +565,8 @@ async def download_manual_docx():
 @app.get("/service", response_class=HTMLResponse)
 @app.get("/upload", response_class=HTMLResponse)
 @app.get("/history", response_class=HTMLResponse)
+@app.get("/death-audit", response_class=HTMLResponse)
+@app.get("/data-quality", response_class=HTMLResponse)
 @app.get("/settings", response_class=HTMLResponse)
 @app.get("/manual", response_class=HTMLResponse)
 async def serve_app_route():
@@ -1487,6 +1511,531 @@ async def logout():
 # Protected Endpoints (ต้อง auth)
 # ────────────────────────────────────────────
 
+def _validate_data_quality_sql(sql: str) -> str:
+    """Defense in depth: Agent ยอมรัน SELECT เดียวเท่านั้นกับ HIS."""
+    normalized = str(sql or "").strip()
+    if normalized.endswith(";"):
+        normalized = normalized[:-1].rstrip()
+    if not re.match(r"^SELECT\b", normalized, re.IGNORECASE):
+        raise HTTPException(status_code=400, detail="รายงานนี้ไม่ใช่คำสั่ง SELECT")
+    if re.search(r"[;#]|--|/\*", normalized):
+        raise HTTPException(status_code=400, detail="SQL รายงานต้องมี SELECT เพียงคำสั่งเดียวและไม่ใช้ comment")
+    forbidden = re.compile(
+        r"\b(INSERT|UPDATE|DELETE|REPLACE|DROP|ALTER|TRUNCATE|CREATE|GRANT|REVOKE|CALL|EXECUTE|"
+        r"HANDLER|LOAD|LOCK|UNLOCK|SET|INTO\s+OUTFILE|INTO\s+DUMPFILE|LOAD_FILE|SLEEP|BENCHMARK)\b",
+        re.IGNORECASE,
+    )
+    if forbidden.search(normalized):
+        raise HTTPException(status_code=400, detail="SQL รายงานมีคำสั่งหรือฟังก์ชันที่ไม่อนุญาต")
+    return normalized
+
+
+def _safe_report_field(value: str) -> str:
+    field = str(value or "").strip()
+    if not re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", field):
+        raise HTTPException(status_code=400, detail=f"ชื่อฟิลด์รายงานไม่ถูกต้อง: {field}")
+    return field
+
+
+def _get_data_quality_report(report_code: str) -> dict:
+    encoded = urllib.parse.quote(str(report_code or ""), safe="")
+    try:
+        response = _central_api_json(f"/api/agents/data-quality-reports/{encoded}")
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            raise HTTPException(status_code=404, detail="ไม่พบรายงานหรือรายงานถูกปิดใช้งาน")
+        raise HTTPException(status_code=502, detail=f"ไม่สามารถอ่านนิยามรายงานจาก API Center: HTTP {exc.code}")
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"ไม่สามารถอ่านนิยามรายงานจาก API Center: {exc}")
+    report = response.get("data") or {}
+    if not report:
+        raise HTTPException(status_code=404, detail="ไม่พบรายงาน")
+    report["sqlQuery"] = _validate_data_quality_sql(report.get("sqlQuery"))
+    return report
+
+
+def _data_quality_query_parts(report: dict, request: DataQualityQueryRequest, ignored_filters=None):
+    ignored_filters = set(ignored_filters or [])
+    columns = report.get("columns") or []
+    searchable = [
+        _safe_report_field(item.get("field"))
+        for item in columns
+        if isinstance(item, dict) and item.get("field") and item.get("searchable")
+    ]
+    sortable = {
+        _safe_report_field(item.get("field"))
+        for item in columns
+        if isinstance(item, dict) and item.get("field") and item.get("sortable")
+    }
+    conditions = []
+    params = []
+    operator_sql = {"eq": "=", "gte": ">=", "lte": "<=", "gt": ">", "lt": "<"}
+    for item in report.get("filters") or []:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name") or "")
+        if name in ignored_filters:
+            continue
+        value = request.filters.get(name)
+        if value is None or str(value).strip() == "":
+            continue
+        field = _safe_report_field(item.get("field"))
+        operator = str(item.get("operator") or "eq")
+        if operator == "contains":
+            conditions.append(f"CAST(report_data.`{field}` AS CHAR) LIKE %s")
+            params.append(f"%{value}%")
+        elif operator == "abnormal_group":
+            if value == "weight":
+                conditions.append(f"report_data.`{field}` IN ('weight', 'both')")
+            elif value == "height":
+                conditions.append(f"report_data.`{field}` IN ('height', 'both')")
+            elif value == "both":
+                conditions.append(f"report_data.`{field}` = 'both'")
+            else:
+                raise HTTPException(status_code=400, detail="กลุ่มความผิดปกติไม่ถูกต้อง")
+        elif operator in operator_sql:
+            conditions.append(f"report_data.`{field}` {operator_sql[operator]} %s")
+            params.append(value)
+        else:
+            raise HTTPException(status_code=400, detail=f"ไม่รองรับ operator: {operator}")
+
+    search = str(request.search or "").strip()
+    if search and searchable:
+        conditions.append("(" + " OR ".join(
+            f"CAST(report_data.`{field}` AS CHAR) LIKE %s" for field in searchable
+        ) + ")")
+        params.extend([f"%{search}%"] * len(searchable))
+
+    default_sort = report.get("defaultSort") or {}
+    sort_by = str(request.sort_by or default_sort.get("field") or "").strip()
+    if sort_by and sort_by not in sortable:
+        sort_by = ""
+    direction = str(request.sort_direction or default_sort.get("direction") or "asc").lower()
+    direction = "DESC" if direction == "desc" else "ASC"
+    order_sql = f" ORDER BY report_data.`{_safe_report_field(sort_by)}` {direction}" if sort_by else ""
+    where_sql = " WHERE " + " AND ".join(conditions) if conditions else ""
+    return where_sql, order_sql, params
+
+
+def _execute_data_quality_report(report: dict, request: DataQualityQueryRequest, export: bool = False):
+    base_sql = _validate_data_quality_sql(report.get("sqlQuery"))
+    where_sql, order_sql, params = _data_quality_query_parts(report, request)
+    max_rows = max(1, min(int(report.get("maxRows") or 10000), 100000))
+    connection = get_connection()
+    query_timeout = max(1, min(int(report.get("queryTimeoutSeconds") or 30), 120))
+    connection._read_timeout = query_timeout
+    connection._write_timeout = query_timeout
+    try:
+        with connection.cursor() as cursor:
+            start_read_only_transaction(connection)
+            if export:
+                cursor.execute(
+                    f"SELECT * FROM ({base_sql}) report_data{where_sql}{order_sql} LIMIT %s",
+                    tuple(params + [max_rows + 1]),
+                )
+                exported_rows = cursor.fetchall() or []
+                truncated = len(exported_rows) > max_rows
+                rows = exported_rows[:max_rows]
+                actual_total = len(exported_rows)
+                available_total = len(rows)
+            else:
+                page_size = max(1, min(int(request.page_size or 20), 200))
+                page = max(1, int(request.page or 1))
+                offset = min((page - 1) * page_size, max_rows)
+                cursor.execute(
+                    f"SELECT COUNT(*) AS total FROM ({base_sql}) report_data{where_sql}",
+                    tuple(params),
+                )
+                actual_total = int((cursor.fetchone() or {}).get("total") or 0)
+                cursor.execute(
+                    f"SELECT * FROM ({base_sql}) report_data{where_sql}{order_sql} LIMIT %s OFFSET %s",
+                    tuple(params + [page_size, offset]),
+                )
+                rows = cursor.fetchall() or []
+                available_total = min(actual_total, max_rows)
+                truncated = actual_total > max_rows
+        connection.rollback()
+        return rows, available_total, truncated
+    finally:
+        connection.close()
+
+
+def _data_quality_summary(report: dict, request: DataQualityQueryRequest):
+    base_sql = _validate_data_quality_sql(report.get("sqlQuery"))
+    where_sql, _, params = _data_quality_query_parts(
+        report, request, ignored_filters={"quality_status", "abnormal_group"}
+    )
+    connection = get_connection()
+    query_timeout = max(1, min(int(report.get("queryTimeoutSeconds") or 30), 120))
+    connection._read_timeout = query_timeout
+    try:
+        with connection.cursor() as cursor:
+            start_read_only_transaction(connection)
+            cursor.execute(
+                f"SELECT COUNT(*) AS total, "
+                f"COALESCE(SUM(report_data.quality_status = 'normal'), 0) AS normal, "
+                f"COALESCE(SUM(report_data.quality_status = 'abnormal'), 0) AS abnormal, "
+                f"COALESCE(SUM(report_data.abnormal_type IN ('weight', 'both')), 0) AS weight_abnormal, "
+                f"COALESCE(SUM(report_data.abnormal_type IN ('height', 'both')), 0) AS height_abnormal, "
+                f"COALESCE(SUM(report_data.abnormal_type = 'both'), 0) AS both_abnormal "
+                f"FROM ({base_sql}) report_data{where_sql}",
+                tuple(params),
+            )
+            row = cursor.fetchone() or {}
+        connection.rollback()
+        return {key: int(row.get(key) or 0) for key in (
+            "total", "normal", "abnormal", "weight_abnormal", "height_abnormal", "both_abnormal"
+        )}
+    finally:
+        connection.close()
+
+
+def _data_quality_cache_key(current_user: dict, report_code: str) -> str:
+    username = current_user.get("username") or current_user.get("sub") or "local-user"
+    return f"{username}:{report_code}"
+
+
+def _data_quality_base_filters(report: dict, filters: dict) -> dict:
+    dynamic_names = {"quality_status", "abnormal_group"}
+    return {
+        str(item.get("name")): filters.get(str(item.get("name")))
+        for item in report.get("filters") or []
+        if isinstance(item, dict)
+        and str(item.get("name") or "") not in dynamic_names
+        and filters.get(str(item.get("name") or "")) not in (None, "")
+    }
+
+
+def _summarize_data_quality_rows(rows: list) -> dict:
+    return {
+        "total": len(rows),
+        "normal": sum(1 for row in rows if row.get("quality_status") == "normal"),
+        "abnormal": sum(1 for row in rows if row.get("quality_status") == "abnormal"),
+        "weight_abnormal": sum(1 for row in rows if row.get("abnormal_type") in ("weight", "both")),
+        "height_abnormal": sum(1 for row in rows if row.get("abnormal_type") in ("height", "both")),
+        "both_abnormal": sum(1 for row in rows if row.get("abnormal_type") == "both"),
+    }
+
+
+def _data_quality_sort_value(value):
+    if value is None or value == "":
+        return (2, "")
+    if isinstance(value, (int, float)):
+        return (0, float(value))
+    return (1, str(value).lower())
+
+
+def _filter_cached_data_quality_rows(report: dict, cache: dict, request: DataQualityQueryRequest):
+    rows = list(cache.get("rows") or [])
+    quality_status = str(request.filters.get("quality_status") or "")
+    abnormal_group = str(request.filters.get("abnormal_group") or "")
+    if quality_status:
+        rows = [row for row in rows if str(row.get("quality_status") or "") == quality_status]
+    if abnormal_group == "weight":
+        rows = [row for row in rows if row.get("abnormal_type") in ("weight", "both")]
+    elif abnormal_group == "height":
+        rows = [row for row in rows if row.get("abnormal_type") in ("height", "both")]
+    elif abnormal_group == "both":
+        rows = [row for row in rows if row.get("abnormal_type") == "both"]
+
+    search = str(request.search or "").strip().lower()
+    if search:
+        searchable = [
+            str(item.get("field")) for item in report.get("columns") or []
+            if isinstance(item, dict) and item.get("field") and item.get("searchable")
+        ]
+        rows = [
+            row for row in rows
+            if any(search in str(row.get(field) or "").lower() for field in searchable)
+        ]
+
+    sortable = {
+        str(item.get("field")) for item in report.get("columns") or []
+        if isinstance(item, dict) and item.get("field") and item.get("sortable")
+    }
+    default_sort = report.get("defaultSort") or {}
+    sort_by = str(request.sort_by or default_sort.get("field") or "")
+    if sort_by in sortable:
+        populated = [row for row in rows if row.get(sort_by) not in (None, "")]
+        empty = [row for row in rows if row.get(sort_by) in (None, "")]
+        populated.sort(
+            key=lambda row: _data_quality_sort_value(row.get(sort_by)),
+            reverse=str(request.sort_direction or default_sort.get("direction") or "asc").lower() == "desc",
+        )
+        rows = populated + empty
+    return rows
+
+
+def _refresh_data_quality_cache(report: dict, report_code: str, request: DataQualityQueryRequest, current_user: dict):
+    base_request = DataQualityQueryRequest(
+        filters=_data_quality_base_filters(report, request.filters),
+        page=1, page_size=200, sort_by="", sort_direction="asc",
+    )
+    rows, _, truncated = _execute_data_quality_report(report, base_request, export=True)
+    cache = {
+        "report": report,
+        "rows": rows,
+        "summary": _summarize_data_quality_rows(rows),
+        "truncated": truncated,
+        "base_filters": base_request.filters,
+        "created_at": time.time(),
+    }
+    with data_quality_cache_lock:
+        data_quality_report_cache[_data_quality_cache_key(current_user, report_code)] = cache
+    return cache
+
+
+@app.get("/api/data-quality/reports")
+async def list_data_quality_reports(current_user: dict = Depends(get_current_user)):
+    try:
+        response = _central_api_json("/api/agents/data-quality-reports")
+        return {"success": True, "reports": response.get("data") or []}
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"ไม่สามารถโหลดรายการรายงานจาก API Center: {exc}")
+
+
+@app.post("/api/data-quality/reports/{report_code}/query")
+async def query_data_quality_report(
+    report_code: str, request: DataQualityQueryRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    cache_key = _data_quality_cache_key(current_user, report_code)
+    with data_quality_cache_lock:
+        cache = data_quality_report_cache.get(cache_key)
+    cache_refreshed = bool(request.refresh_cache or not cache)
+    if cache_refreshed:
+        report = _get_data_quality_report(report_code)
+        cache = _refresh_data_quality_cache(report, report_code, request, current_user)
+    else:
+        report = cache.get("report") or _get_data_quality_report(report_code)
+    filtered = _filter_cached_data_quality_rows(report, cache, request)
+    total = len(filtered)
+    page_size = max(1, min(request.page_size, 200))
+    page = max(1, request.page)
+    start = (page - 1) * page_size
+    rows = filtered[start:start + page_size]
+    summary = cache.get("summary") if request.include_summary else None
+    return {
+        "success": True, "report": {key: value for key, value in report.items() if key != "sqlQuery"},
+        "rows": rows, "filtered_count": total, "truncated": bool(cache.get("truncated")), "summary": summary,
+        "page": page, "page_size": page_size, "cache_refreshed": cache_refreshed,
+    }
+
+
+@app.post("/api/data-quality/reports/{report_code}/export")
+async def export_data_quality_report(
+    report_code: str, request: DataQualityExportRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    report = _get_data_quality_report(report_code)
+    if not report.get("allowExport"):
+        raise HTTPException(status_code=403, detail="รายงานนี้ไม่อนุญาตให้ส่งออก")
+    query_request = DataQualityQueryRequest(
+        filters=request.filters if request.scope == "filtered" else {},
+        search=request.search if request.scope == "filtered" else "",
+    )
+    rows, _, _ = _execute_data_quality_report(report, query_request, export=True)
+    if not rows:
+        raise HTTPException(status_code=400, detail="ไม่พบข้อมูลสำหรับส่งออก")
+    columns = [item.get("field") for item in report.get("columns") or [] if item.get("field")]
+    path = export_excel(rows, columns, f"{report_code}.xlsx")
+    return FileResponse(
+        path=path, filename=os.path.basename(path),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+def _calculate_age_years(birthdate):
+    """คำนวณอายุเต็มปีจากวันเกิดเทียบกับวันที่ปัจจุบันของเครื่อง Agent."""
+    if not birthdate:
+        return None
+    try:
+        if hasattr(birthdate, "date"):
+            birth = birthdate.date()
+        elif hasattr(birthdate, "year") and hasattr(birthdate, "month") and hasattr(birthdate, "day"):
+            birth = birthdate
+        else:
+            birth = datetime.strptime(str(birthdate).strip()[:10], "%Y-%m-%d").date()
+
+        today = datetime.now().date()
+        age = today.year - birth.year - ((today.month, today.day) < (birth.month, birth.day))
+        return age if 0 <= age <= 130 else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _death_audit_worker():
+    """ตรวจ PERSON ที่ยังมีชีวิตกับฐานคนตายกลาง โดยไม่แก้ไข HIS."""
+    connection = None
+    try:
+        with death_audit_lock:
+            death_audit_state.update({
+                "status": "running", "rows": [], "processed": 0, "total": 0,
+                "started_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "completed_at": None, "message": "กำลังอ่านข้อมูล PERSON จาก HIS",
+            })
+
+        connection = get_connection()
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT person_id, cid, pname, fname, lname, sex, birthdate
+                FROM person
+                WHERE UPPER(TRIM(death)) = 'N'
+                  AND cid IS NOT NULL
+                  AND CHAR_LENGTH(TRIM(cid)) = 13
+                  AND TRIM(cid) REGEXP '^[0-9]{13}$'
+                ORDER BY person_id
+                """
+            )
+            people = cursor.fetchall() or []
+
+        with death_audit_lock:
+            death_audit_state["total"] = len(people)
+            death_audit_state["message"] = "กำลังเทียบข้อมูลการเสียชีวิตกับส่วนกลาง"
+
+        rows = []
+        for start in range(0, len(people), 1000):
+            batch = people[start:start + 1000]
+            lookup = lookup_central_death_pids([row.get("cid") for row in batch])
+            if not lookup.get("available"):
+                raise RuntimeError(lookup.get("message") or "ไม่สามารถเชื่อมต่อ API Center")
+            matched = {str(value).strip() for value in lookup.get("matched", set())}
+            for person in batch:
+                cid = str(person.get("cid") or "").strip()
+                birthdate = person.get("birthdate")
+                if hasattr(birthdate, "strftime"):
+                    birthdate = birthdate.strftime("%Y-%m-%d")
+                full_name = "".join([
+                    str(person.get("pname") or "").strip(),
+                    str(person.get("fname") or "").strip(),
+                    " ", str(person.get("lname") or "").strip(),
+                ]).strip()
+                rows.append({
+                    "PERSON_CID": cid,
+                    "PID": str(person.get("person_id") or "").strip(),
+                    "FULL_NAME": full_name,
+                    "SEX": str(person.get("sex") or "").strip(),
+                    "BIRTH": str(birthdate or ""),
+                    "AGE": _calculate_age_years(birthdate),
+                    "HIS_STATUS": "ยังมีชีวิต",
+                    "CENTRAL_STATUS": "พบว่าเสียชีวิตแล้ว" if cid in matched else "ไม่พบข้อมูลการตาย",
+                    "_central_death": cid in matched,
+                })
+            with death_audit_lock:
+                death_audit_state["processed"] = min(start + len(batch), len(people))
+
+        with death_audit_lock:
+            death_audit_state.update({
+                "status": "completed", "rows": rows,
+                "processed": len(rows), "total": len(rows),
+                "completed_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "message": "ตรวจสอบเสร็จแล้ว",
+            })
+    except Exception as exc:
+        with death_audit_lock:
+            death_audit_state.update({"status": "error", "message": str(exc)})
+    finally:
+        if connection:
+            try:
+                connection.close()
+            except Exception:
+                pass
+
+
+def _filter_death_audit_rows(
+    result_filter: str,
+    search: str,
+    sort_by: str = "",
+    sort_direction: str = "asc",
+) -> list:
+    with death_audit_lock:
+        rows = list(death_audit_state.get("rows", []))
+    if result_filter == "alive":
+        rows = [row for row in rows if not row.get("_central_death")]
+    elif result_filter == "deceased":
+        rows = [row for row in rows if row.get("_central_death")]
+    term = (search or "").strip().casefold()
+    if term:
+        columns = ("PERSON_CID", "PID", "FULL_NAME", "SEX", "BIRTH", "AGE", "CENTRAL_STATUS")
+        rows = [row for row in rows if any(term in str(row.get(col, "")).casefold() for col in columns)]
+
+    sortable_columns = {
+        "PERSON_CID", "PID", "FULL_NAME", "SEX", "BIRTH", "AGE",
+        "HIS_STATUS", "CENTRAL_STATUS",
+    }
+    if sort_by in sortable_columns:
+        numeric_columns = {"PERSON_CID", "PID", "SEX", "AGE"}
+
+        def has_value(row):
+            value = row.get(sort_by)
+            return value is not None and str(value).strip() != ""
+
+        def sort_value(row):
+            value = row.get(sort_by)
+            if sort_by in numeric_columns:
+                try:
+                    return int(str(value).strip())
+                except (TypeError, ValueError):
+                    return 0
+            return str(value).strip().casefold()
+
+        populated = [row for row in rows if has_value(row)]
+        empty = [row for row in rows if not has_value(row)]
+        populated.sort(key=sort_value, reverse=sort_direction.lower() == "desc")
+        rows = populated + empty
+    return rows
+
+
+@app.post("/api/death-audit/start")
+async def start_death_audit(current_user: dict = Depends(get_current_user)):
+    with death_audit_lock:
+        if death_audit_state.get("status") == "running":
+            return {"success": True, "message": "กำลังตรวจสอบอยู่"}
+        death_audit_state.update({"status": "starting", "message": "กำลังเตรียมข้อมูล"})
+    threading.Thread(target=_death_audit_worker, daemon=True).start()
+    return {"success": True, "message": "เริ่มตรวจสอบแล้ว"}
+
+
+@app.get("/api/death-audit/results")
+async def get_death_audit_results(
+    result_filter: str = "all", search: str = "", page: int = 1, page_size: int = 20,
+    sort_by: str = "", sort_direction: str = "asc",
+    current_user: dict = Depends(get_current_user)
+):
+    page = max(1, page)
+    page_size = max(1, min(page_size, 200))
+    with death_audit_lock:
+        state = {key: value for key, value in death_audit_state.items() if key != "rows"}
+        all_rows = list(death_audit_state.get("rows", []))
+    filtered = _filter_death_audit_rows(result_filter, search, sort_by, sort_direction)
+    start = (page - 1) * page_size
+    deceased = sum(1 for row in all_rows if row.get("_central_death"))
+    return {
+        "success": True, "state": state,
+        "counts": {"all": len(all_rows), "alive": len(all_rows) - deceased, "deceased": deceased},
+        "rows": [{k: v for k, v in row.items() if not k.startswith("_")} for row in filtered[start:start + page_size]],
+        "filtered_count": len(filtered), "page": page, "page_size": page_size,
+    }
+
+
+@app.post("/api/death-audit/export")
+async def export_death_audit(
+    request: DeathAuditExportRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    rows = _filter_death_audit_rows(
+        request.result_filter if request.scope == "filtered" else "all",
+        request.search if request.scope == "filtered" else "",
+    )
+    if not rows:
+        raise HTTPException(status_code=400, detail="ไม่พบข้อมูลสำหรับส่งออก")
+    columns = ["PERSON_CID", "PID", "FULL_NAME", "SEX", "BIRTH", "AGE", "HIS_STATUS", "CENTRAL_STATUS"]
+    path = export_excel(rows, columns, "death_status_audit.xlsx")
+    return FileResponse(
+        path=path, filename=os.path.basename(path),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+
 @app.post("/api/upload")
 async def upload_file(
     file: UploadFile = File(...),
@@ -1534,6 +2083,7 @@ async def upload_file(
                         "columns": cached_info["columns"],
                         "total_rows": cached_info["total_rows"],
                         "facilities": cached_info.get("facilities", []),
+                        "default_hoscode": cached_info.get("default_hoscode", ""),
                         "duplicate": True
                     }
                 await asyncio.sleep(0.1)
@@ -1561,12 +2111,14 @@ async def upload_file(
         result = process_upload(file_path)
 
         # เก็บข้อมูลใน memory
+        default_hoscode = _default_hoscode_for_facilities(result.get("facilities", []))
         upload_store[file_id] = {
             "file_path": file_path,
             "original_filename": file.filename,
             "columns": result["columns"],
             "data": result["data"],
             "facilities": result.get("facilities", []),
+            "default_hoscode": default_hoscode,
             "upload_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "total_rows": len(result["data"]),
             "status": "uploaded"
@@ -1597,7 +2149,8 @@ async def upload_file(
             "preview": result["preview"],
             "columns": result["columns"],
             "total_rows": len(result["data"]),
-            "facilities": result.get("facilities", [])
+            "facilities": result.get("facilities", []),
+            "default_hoscode": default_hoscode
         }
 
     except Exception as e:
@@ -1903,6 +2456,63 @@ async def get_history(current_user: dict = Depends(get_current_user)):
         "success": True,
         "data": list(reversed(history_store))
     }
+
+
+@app.get("/api/history/{file_id}/resume")
+async def resume_history(
+    file_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """เปิดไฟล์ที่อัปโหลดไว้กลับไปยังขั้นเลือกหน่วยบริการและแปลงข้อมูล"""
+    upload_info = upload_store.get(file_id)
+    if not upload_info:
+        raise HTTPException(status_code=404, detail="ไม่พบไฟล์ประวัติที่ระบุ")
+
+    file_path = upload_info.get("file_path", "")
+    if not file_path or not os.path.isfile(file_path):
+        raise HTTPException(status_code=404, detail="ไม่พบไฟล์ต้นฉบับ กรุณาอัปโหลดไฟล์ใหม่")
+
+    return {
+        "success": True,
+        "file_id": file_id,
+        "filename": upload_info.get("original_filename", ""),
+        "file_size": os.path.getsize(file_path),
+        "preview": list(upload_info.get("data", []))[:5],
+        "columns": upload_info.get("columns", []),
+        "total_rows": upload_info.get("total_rows", 0),
+        "facilities": upload_info.get("facilities", []),
+        "default_hoscode": upload_info.get("default_hoscode", "")
+    }
+
+
+@app.delete("/api/history/{file_id}")
+async def delete_history(
+    file_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """ลบรายการประวัติและไฟล์ที่ระบบสร้างสำหรับรายการนั้น"""
+    upload_info = upload_store.get(file_id)
+    if not upload_info and not any(item.get("file_id") == file_id for item in history_store):
+        raise HTTPException(status_code=404, detail="ไม่พบประวัติที่ระบุ")
+
+    if upload_info:
+        file_path = os.path.abspath(upload_info.get("file_path", ""))
+        uploads_root = os.path.abspath(UPLOADS_DIR)
+        if file_path and os.path.commonpath([file_path, uploads_root]) == uploads_root and os.path.isfile(file_path):
+            os.remove(file_path)
+
+        output_path = upload_info.get("output_path", "")
+        if output_path and os.path.isfile(output_path):
+            os.remove(output_path)
+
+    upload_store.pop(file_id, None)
+    history_store[:] = [item for item in history_store if item.get("file_id") != file_id]
+    with upload_cache_lock:
+        for key, value in list(recent_upload_cache.items()):
+            if value.get("file_id") == file_id:
+                recent_upload_cache.pop(key, None)
+
+    return {"success": True, "message": "ลบประวัติเรียบร้อยแล้ว"}
 
 
 @app.get("/api/history/{file_id}")

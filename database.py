@@ -3,9 +3,8 @@ Database Connection Manager - จัดการการเชื่อมต�
 ใช้ pymysql พร้อม context manager pattern
 """
 
-import pymysql
-import pymysql.cursors
 from config import load_config
+from db_compat import connect_compatible, database_error_message
 
 
 class DatabaseConnection:
@@ -39,31 +38,10 @@ def get_connection():
         raise Exception("ยังไม่ได้ตั้งค่าฐานข้อมูล กรุณาตั้งค่าก่อนใช้งาน")
 
     try:
-        connection = pymysql.connect(
-            host=config.get("host", "localhost"),
-            port=int(config.get("port", 3306)),
-            database=config.get("database", ""),
-            user=config.get("username", ""),
-            password=config.get("password", ""),
-            charset="utf8mb4",
-            cursorclass=pymysql.cursors.DictCursor,
-            connect_timeout=10,
-            read_timeout=30,
-            write_timeout=30
-        )
+        connection, _ = connect_compatible(config, inspect=False)
         return connection
-    except pymysql.err.OperationalError as e:
-        error_code = e.args[0] if e.args else 0
-        if error_code == 1045:
-            raise Exception("ชื่อผู้ใช้หรือรหัสผ่านฐานข้อมูลไม่ถูกต้อง")
-        elif error_code == 2003:
-            raise Exception(f"ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ฐานข้อมูลได้ กรุณาตรวจสอบการตั้งค่า")
-        elif error_code == 1049:
-            raise Exception(f"ไม่พบฐานข้อมูลที่ระบุ")
-        else:
-            raise Exception(f"เกิดข้อผิดพลาดในการเชื่อมต่อฐานข้อมูล: {e}")
     except Exception as e:
-        raise Exception(f"เกิดข้อผิดพลาดที่ไม่คาดคิด: {e}")
+        raise Exception(database_error_message(e, config))
 
 
 def execute_query(sql: str, params: tuple = None) -> int:

@@ -49,6 +49,32 @@ class ExportRequest(BaseModel):
     search: str = ""
 
 
+class DeathAuditExportRequest(BaseModel):
+    """โมเดลส่งออกผลตรวจสอบสถานะการเสียชีวิต"""
+    scope: str = "all"
+    result_filter: str = "all"
+    search: str = ""
+
+
+class DataQualityQueryRequest(BaseModel):
+    """ตัวกรองและการแบ่งหน้าสำหรับรายงานคุณภาพข้อมูล"""
+    filters: Dict[str, Any] = Field(default_factory=dict)
+    search: str = ""
+    page: int = 1
+    page_size: int = 20
+    sort_by: str = ""
+    sort_direction: str = "asc"
+    include_summary: bool = True
+    refresh_cache: bool = False
+
+
+class DataQualityExportRequest(BaseModel):
+    """ส่งออกรายงานคุณภาพข้อมูลตามตัวกรอง"""
+    filters: Dict[str, Any] = Field(default_factory=dict)
+    search: str = ""
+    scope: str = "filtered"
+
+
 class UploadResponse(BaseModel):
     """โมเดลสำหรับ response การอัพโหลดไฟล์"""
     file_id: str
@@ -56,6 +82,7 @@ class UploadResponse(BaseModel):
     columns: List[str]
     total_rows: int
     facilities: List[Dict[str, Any]] = Field(default_factory=list)
+    default_hoscode: str = ""
 
 
 class TransformResponse(BaseModel):
