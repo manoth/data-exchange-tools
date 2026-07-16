@@ -41,7 +41,7 @@ from database import get_connection
 from db_compat import start_read_only_transaction
 
 # กำหนด path
-APP_VERSION = "0.1.3"
+APP_VERSION = "0.1.4"
 APP_HOST = os.environ.get("APP_HOST", "0.0.0.0")
 APP_PORT = int(os.environ.get("PORT", "8899"))
 APP_URL = os.environ.get("APP_URL", f"http://localhost:{APP_PORT}")

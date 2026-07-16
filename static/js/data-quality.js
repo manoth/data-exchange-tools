@@ -1,4 +1,6 @@
 let dataQualityReports = [];
+let dataQualityReportCatalog = [];
+let dataQualityReportsLoaded = false;
 let activeDataQualityReport = null;
 let dataQualityPage = 1;
 let dataQualityPageSize = 20;
@@ -41,7 +43,7 @@ const dataQualityAbnormalGroupFallbacks = {
 };
 
 async function initDataQualityReports() {
-  if (dataQualityReports.length) return;
+  if (dataQualityReportsLoaded) return;
   const container = document.getElementById('data-quality-report-list');
   if (!container) return;
   showDataQualityLoading('กำลังโหลดรายการรายงานจาก Control...');
@@ -51,11 +53,77 @@ async function initDataQualityReports() {
       container.innerHTML = `<div class="empty-state"><p>${escapeHtml(result?.detail || 'ไม่สามารถโหลดรายงานจาก Control ได้')}</p></div>`;
       return;
     }
-    dataQualityReports = result.reports || [];
+    dataQualityReportCatalog = result.reports || [];
+    dataQualityReportsLoaded = true;
+    rebuildInstalledDataQualityReports();
     renderDataQualityReportList();
   } finally {
     hideDataQualityLoading();
   }
+}
+
+function dataQualityStorePreferenceKey() {
+  const username = String(getUserData()?.username || 'default').trim() || 'default';
+  return `dex_data_quality_optional_reports:${username}`;
+}
+
+function getSelectedOptionalDataQualityReports() {
+  try {
+    const value = JSON.parse(localStorage.getItem(dataQualityStorePreferenceKey()) || '[]');
+    return Array.isArray(value) ? value.map(String) : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+function rebuildInstalledDataQualityReports() {
+  const selected = new Set(getSelectedOptionalDataQualityReports());
+  dataQualityReports = dataQualityReportCatalog.filter(report =>
+    report.publicationMode !== 'optional' || selected.has(String(report.reportCode))
+  );
+}
+
+function openDataQualityReportStore() {
+  const modal = document.getElementById('data-quality-store-modal');
+  if (!modal) return;
+  renderDataQualityReportStore();
+  modal.classList.remove('hidden');
+}
+
+function closeDataQualityReportStore(event) {
+  if (event && event.target !== event.currentTarget) return;
+  document.getElementById('data-quality-store-modal')?.classList.add('hidden');
+}
+
+function renderDataQualityReportStore() {
+  const container = document.getElementById('data-quality-store-list');
+  if (!container) return;
+  const optionalReports = dataQualityReportCatalog.filter(report => report.publicationMode === 'optional');
+  const selected = new Set(getSelectedOptionalDataQualityReports());
+  if (!optionalReports.length) {
+    container.innerHTML = '<div class="empty-state report-store-empty"><p>ยังไม่มีรายงานทางเลือกที่ Control เผยแพร่</p></div>';
+    return;
+  }
+  container.innerHTML = optionalReports.map(report => {
+    const checked = selected.has(String(report.reportCode));
+    return `<label class="report-store-item">
+      <input type="checkbox" data-optional-report-code="${escapeHtml(report.reportCode)}" ${checked ? 'checked' : ''}>
+      <span class="report-store-check">${checked ? '✓' : ''}</span>
+      <span class="report-store-content"><small>${escapeHtml(report.category || 'คุณภาพข้อมูล')}</small><strong>${escapeHtml(report.reportName)}</strong><span>${escapeHtml(report.description || '')}</span></span>
+    </label>`;
+  }).join('');
+  container.querySelectorAll('[data-optional-report-code]').forEach(input => {
+    input.addEventListener('change', () => toggleOptionalDataQualityReport(input.dataset.optionalReportCode, input.checked));
+  });
+}
+
+function toggleOptionalDataQualityReport(code, enabled) {
+  const selected = new Set(getSelectedOptionalDataQualityReports());
+  if (enabled) selected.add(String(code)); else selected.delete(String(code));
+  localStorage.setItem(dataQualityStorePreferenceKey(), JSON.stringify([...selected]));
+  rebuildInstalledDataQualityReports();
+  renderDataQualityReportList();
+  renderDataQualityReportStore();
 }
 
 function renderDataQualityReportList() {
@@ -68,7 +136,7 @@ function renderDataQualityReportList() {
   container.innerHTML = dataQualityReports.map(report => `
     <button type="button" class="data-quality-report-card glass-card" data-report-code="${escapeHtml(report.reportCode)}">
       <span class="data-quality-card-icon"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19V9"/><path d="M10 19V5"/><path d="M16 19v-7"/><path d="M22 19V3"/></svg></span>
-      <span class="data-quality-card-content"><small>${escapeHtml(report.category || 'คุณภาพข้อมูล')}</small><strong>${escapeHtml(report.reportName)}</strong><span>${escapeHtml(report.description || '')}</span></span>
+      <span class="data-quality-card-content"><small>${escapeHtml(report.category || 'คุณภาพข้อมูล')}${report.publicationMode === 'optional' ? ' · รายงานทางเลือก' : ''}</small><strong>${escapeHtml(report.reportName)}</strong><span>${escapeHtml(report.description || '')}</span></span>
       <span class="data-quality-card-arrow">›</span>
     </button>`).join('');
   container.querySelectorAll('[data-report-code]').forEach(button => {
@@ -89,6 +157,7 @@ function openDataQualityReport(code) {
   document.getElementById('data-quality-report-list')?.classList.add('hidden');
   document.getElementById('data-quality-report-detail')?.classList.remove('hidden');
   document.getElementById('data-quality-back')?.classList.remove('hidden');
+  document.getElementById('data-quality-store')?.classList.add('hidden');
   document.getElementById('data-quality-title').textContent = activeDataQualityReport.reportName;
   document.getElementById('data-quality-description').textContent = activeDataQualityReport.description || '';
   const normalDescription = document.querySelector('.data-quality-card-normal .result-filter-desc');
@@ -146,6 +215,7 @@ function showDataQualityReportList() {
   document.getElementById('data-quality-report-list')?.classList.remove('hidden');
   document.getElementById('data-quality-report-detail')?.classList.add('hidden');
   document.getElementById('data-quality-back')?.classList.add('hidden');
+  document.getElementById('data-quality-store')?.classList.remove('hidden');
   document.getElementById('data-quality-title').textContent = 'ตรวจสอบคุณภาพข้อมูล';
   document.getElementById('data-quality-description').textContent = 'เลือกรายงานเพื่อตรวจข้อมูลผิดปกติหรือขัดแย้งใน HIS';
 }

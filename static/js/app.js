@@ -356,7 +356,7 @@ async function loadSettingsStatus() {
   }
 
   if (typeof checkVersionUpdate === 'function' && isAdminSessionReady()) {
-    checkVersionUpdate(true, false);
+    checkVersionUpdate(false, false);
   }
 
   loadApiCenterInfo();

@@ -1921,6 +1921,23 @@ table {
 .data-quality-card-content strong { font-size: 1.05rem; }
 .data-quality-card-content span { color: var(--text-secondary); line-height: 1.55; }
 .data-quality-card-arrow { margin-left: auto; color: var(--text-muted); font-size: 2rem; line-height: 1; }
+.data-quality-header-actions { display: flex; align-items: center; gap: 10px; }
+.report-store-modal { width: min(720px, 92vw); max-width: 720px; }
+.report-store-modal .modal-header > div { display: grid; gap: 4px; }
+.report-store-modal .modal-header p { margin: 0; }
+.report-store-modal .modal-footer { align-items: center; justify-content: space-between; }
+.report-store-save-note { color: var(--text-muted); font-size: .86rem; }
+.report-store-item { position: relative; display: flex; align-items: flex-start; gap: 14px; padding: 16px; margin-bottom: 10px; border: 1px solid var(--glass-border); border-radius: var(--radius-md); background: rgba(255,255,255,.025); cursor: pointer; transition: var(--transition); }
+.report-store-item:hover { border-color: var(--accent-blue); background: rgba(34,211,238,.05); }
+.report-store-item input { position: absolute; opacity: 0; pointer-events: none; }
+.report-store-check { display: grid; place-items: center; flex: 0 0 28px; width: 28px; height: 28px; border: 1px solid var(--glass-border-highlight); border-radius: 8px; color: #062c2c; background: rgba(255,255,255,.04); font-weight: 900; }
+.report-store-item:has(input:checked) { border-color: var(--accent-green); background: rgba(74,222,128,.07); }
+.report-store-item:has(input:checked) .report-store-check { border-color: var(--accent-green); background: var(--accent-green); }
+.report-store-content { min-width: 0; display: grid; gap: 4px; }
+.report-store-content small { color: var(--accent-blue); }
+.report-store-content strong { color: var(--text-primary); }
+.report-store-content > span { color: var(--text-secondary); line-height: 1.45; }
+.report-store-empty { padding: 28px 16px; }
 
 .data-quality-filter-panel { margin-bottom: 20px; padding: 20px; }
 .data-quality-filter-panel-compact .data-quality-filter-heading { margin-bottom: 0; }
@@ -1968,6 +1985,8 @@ table {
 @media (max-width: 720px) {
   .data-quality-report-grid { grid-template-columns: 1fr; }
   .data-quality-filter-heading { align-items: stretch; flex-direction: column; }
+  .data-quality-header-actions { width: 100%; flex-wrap: wrap; }
+  .report-store-modal .modal-footer { align-items: stretch; flex-direction: column; }
 }
 .death-audit-header p { margin-top: 5px; }
 .death-audit-empty {

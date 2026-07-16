@@ -18,13 +18,15 @@
 - แสดงผลเป็นตารางตามคอลัมน์ของไฟล์ที่อัปโหลด และ export Excel ได้
 - ตรวจสอบสถานะการเสียชีวิตจาก PERSON เทียบ API Center พร้อมค้นหา กรอง เรียง และส่งออก Excel
 - ตรวจสอบคุณภาพข้อมูลจากรายงานที่ Control กำหนด โดย Agent ยอมรันเฉพาะคำสั่ง `SELECT`
+- รองรับสถานะเผยแพร่รายงานแบบบังคับ รายงานทางเลือก เฉพาะหน่วยบริการ และปิดใช้งาน
+- ผู้ใช้เลือกเปิดหรือปิดรายงานทางเลือกได้จากคลังรายงานใน Agent
 - รองรับ Windows แบบ build เป็น `.exe` และ Linux/Docker
 
 ## Release ปัจจุบัน
 
-- Version: `v0.1.3`
-- รายละเอียด: [`RELEASE_NOTES_v0.1.3.md`](RELEASE_NOTES_v0.1.3.md)
-- ขั้นตอนเผยแพร่สำหรับผู้ดูแล: [`RELEASE_CHECKLIST_v0.1.3.md`](RELEASE_CHECKLIST_v0.1.3.md)
+- Version: `v0.1.4`
+- รายละเอียด: [`RELEASE_NOTES_v0.1.4.md`](RELEASE_NOTES_v0.1.4.md)
+- ขั้นตอนเผยแพร่สำหรับผู้ดูแล: [`RELEASE_CHECKLIST_v0.1.4.md`](RELEASE_CHECKLIST_v0.1.4.md)
 - Workflow มาตรฐานสำหรับ Release รุ่นถัดไป: [`RELEASE_WORKFLOW.md`](RELEASE_WORKFLOW.md)
 
 ## วิธีรันบน Windows

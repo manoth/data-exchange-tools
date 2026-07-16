@@ -280,6 +280,7 @@ async function checkConfigStatus() {
 async function checkVersionUpdate(force = true, silent = false) {
   const statusDiv = document.getElementById('version-status');
   const updateBtn = document.getElementById('btn-run-update');
+  const updateBtnLabel = document.getElementById('btn-run-update-label');
   if (!statusDiv && silent) return;
 
   if (statusDiv) {
@@ -308,32 +309,31 @@ async function checkVersionUpdate(force = true, silent = false) {
   }
 
   const notes = result.notes ? ` (${escapeHtml(result.notes)})` : '';
-  const source = result.source === 'online' ? 'online' : 'local';
-  const startupUpdate = result.startup_auto_update || {};
-  const startupMessage = startupUpdate.message
-    ? `<div class="status-subtext">Auto update ตอนเริ่ม service: ${escapeHtml(startupUpdate.message)}</div>`
-    : '';
   if (result.update_available) {
     if (statusDiv) {
       statusDiv.className = 'connection-status success';
       statusDiv.innerHTML = `
         <div class="status-content">
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
-          <span>มี update ${source}: v${escapeHtml(result.latest_version)} | ปัจจุบัน v${escapeHtml(result.current_version)}${notes}</span>
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m17 8-5-5-5 5"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/></svg>
+          <span>พบเวอร์ชันใหม่ v${escapeHtml(result.latest_version)} (เวอร์ชันปัจจุบัน v${escapeHtml(result.current_version)})${notes}</span>
         </div>
-        ${startupMessage}
+        <div class="status-subtext">พร้อมดาวน์โหลดและติดตั้งอัปเดต</div>
       `;
+    }
+    if (updateBtnLabel) {
+      updateBtnLabel.textContent = `อัปเดตเป็น v${result.latest_version}`;
     }
     if (updateBtn) updateBtn.classList.remove('hidden');
     if (silent) showToast(`มี update v${result.latest_version}`, 'info');
   } else {
     if (statusDiv) {
-      statusDiv.className = 'connection-status';
+      statusDiv.className = 'connection-status success';
       statusDiv.innerHTML = `
         <div class="status-content">
-          <span>เวอร์ชันปัจจุบัน v${escapeHtml(result.current_version)} | ${escapeHtml(result.message || 'ยังไม่มี update')}</span>
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+          <span>เวอร์ชัน v${escapeHtml(result.current_version)} เป็นเวอร์ชันล่าสุดแล้ว</span>
         </div>
-        ${startupMessage}
+        <div class="status-subtext">ระบบจะตรวจสอบเวอร์ชันใหม่อีกครั้งโดยอัตโนมัติทุก 10 นาที</div>
       `;
     }
   }
