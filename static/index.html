@@ -7,7 +7,7 @@
   <title>Data Exchange Tools</title>
   <link rel="icon" href="/static/images/favicon.ico">
   <link rel="apple-touch-icon" href="/static/images/logo.png">
-  <link rel="stylesheet" href="/static/css/style.css?v=0.1.2">
+  <link rel="stylesheet" href="/static/css/style.css?v=0.1.3">
 </head>
 <body>
 
@@ -288,7 +288,7 @@
         </button>
       </div>
       <div class="sidebar-footer">
-        <span class="version-text">v0.1.2</span>
+        <span class="version-text">v0.1.3</span>
       </div>
     </aside>
 
@@ -522,24 +522,19 @@
             </button>
             <div id="data-quality-criteria-content" class="data-quality-criteria-content hidden"><p id="data-quality-criteria-text"></p></div>
           </div>
+          <div id="data-quality-filters" class="data-quality-filter-panel glass-card"></div>
           <div class="result-filter-cards data-quality-summary-cards">
             <button class="result-filter-card data-quality-card-all active" data-quality-status="all" onclick="setDataQualityStatus('all')">
               <span class="result-filter-title">ทั้งหมด</span><strong id="data-quality-count-all">0</strong><span class="result-filter-desc">ข้อมูลล่าสุดที่นำมาตรวจสอบ</span>
             </button>
             <button class="result-filter-card data-quality-card-normal" data-quality-status="normal" onclick="setDataQualityStatus('normal')">
-              <span class="result-filter-title">ปกติ</span><strong id="data-quality-count-normal">0</strong><span class="result-filter-desc">น้ำหนักและส่วนสูงอยู่ในเกณฑ์</span>
+              <span class="result-filter-title">ปกติ</span><strong id="data-quality-count-normal">0</strong><span class="result-filter-desc">ข้อมูลอยู่ในเกณฑ์ที่กำหนด</span>
             </button>
             <button class="result-filter-card result-filter-card-warning data-quality-card-abnormal" data-quality-status="abnormal" onclick="setDataQualityStatus('abnormal')">
               <span class="result-filter-title">ผิดปกติ</span><strong id="data-quality-count-abnormal">0</strong><span class="result-filter-desc">ควรตรวจสอบหรือแก้ไขข้อมูล</span>
             </button>
           </div>
-          <div id="data-quality-abnormal-tabs" class="data-quality-abnormal-tabs hidden">
-            <button type="button" class="data-quality-tab-all active" data-quality-abnormal="all" onclick="setDataQualityAbnormalFilter('all')">ทั้งหมด <strong id="data-quality-tab-count-all">0</strong></button>
-            <button type="button" class="data-quality-tab-weight" data-quality-abnormal="weight" onclick="setDataQualityAbnormalFilter('weight')">น้ำหนักผิดปกติ <strong id="data-quality-tab-count-weight">0</strong></button>
-            <button type="button" class="data-quality-tab-height" data-quality-abnormal="height" onclick="setDataQualityAbnormalFilter('height')">ส่วนสูงผิดปกติ <strong id="data-quality-tab-count-height">0</strong></button>
-            <button type="button" class="data-quality-tab-both" data-quality-abnormal="both" onclick="setDataQualityAbnormalFilter('both')">ผิดปกติทั้งสองค่า <strong id="data-quality-tab-count-both">0</strong></button>
-          </div>
-          <div id="data-quality-filters" class="data-quality-filter-panel glass-card"></div>
+          <div id="data-quality-abnormal-tabs" class="data-quality-abnormal-tabs hidden"></div>
           <div class="controls-bar data-quality-controls">
             <div class="controls-primary-row">
               <div class="search-wrapper"><span class="search-icon"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg></span><input class="search-input" id="data-quality-search" placeholder="ค้นหา..." oninput="queueDataQualitySearch()"></div>
@@ -775,12 +770,12 @@
 </div>
 
 <!-- Scripts -->
-<script src="/static/js/utils.js?v=0.1.2"></script>
-<script src="/static/js/auth.js?v=0.1.2"></script>
-<script src="/static/js/config.js?v=0.1.2"></script>
-  <script src="/static/js/upload.js?v=0.1.2"></script>
-<script src="/static/js/death-audit.js?v=0.1.2"></script>
-<script src="/static/js/data-quality.js?v=0.1.2"></script>
-<script src="/static/js/app.js?v=0.1.2"></script>
+<script src="/static/js/utils.js?v=0.1.3"></script>
+<script src="/static/js/auth.js?v=0.1.3"></script>
+<script src="/static/js/config.js?v=0.1.3"></script>
+  <script src="/static/js/upload.js?v=0.1.3"></script>
+<script src="/static/js/death-audit.js?v=0.1.3"></script>
+<script src="/static/js/data-quality.js?v=0.1.3"></script>
+<script src="/static/js/app.js?v=0.1.3"></script>
 </body>
 </html>

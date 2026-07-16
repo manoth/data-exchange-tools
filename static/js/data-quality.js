@@ -10,6 +10,36 @@ let dataQualityAbnormalFilter = 'all';
 let dataQualitySummary = { total: 0, normal: 0, abnormal: 0, weight_abnormal: 0, height_abnormal: 0, both_abnormal: 0 };
 let dataQualityLoadingCount = 0;
 
+const dataQualityAbnormalGroupFallbacks = {
+  'abnormal-weight-height': [
+    { value: 'weight', label: 'น้ำหนักผิดปกติ', matches: ['weight', 'both'] },
+    { value: 'height', label: 'ส่วนสูงผิดปกติ', matches: ['height', 'both'] },
+    { value: 'both', label: 'ผิดปกติทั้งสองค่า', matches: ['both'] }
+  ],
+  'living-person-basic-invalid': [
+    { value: 'cid_invalid', label: 'CID ผิดปกติ' },
+    { value: 'name_invalid', label: 'ชื่อไม่ครบ/ไม่สมเหตุสมผล' },
+    { value: 'sex_invalid', label: 'เพศผิดปกติ' },
+    { value: 'birth_invalid', label: 'วันเกิด/อายุผิดปกติ' },
+    { value: 'patient_link_invalid', label: 'ไม่พบ HN ใน PATIENT' },
+    { value: 'death_conflict', label: 'สถานะเสียชีวิตขัดแย้ง' }
+  ],
+  'living-person-patient-conflict': [
+    { value: 'patient_missing', label: 'ไม่พบ PATIENT' },
+    { value: 'cid_conflict', label: 'CID ขัดแย้ง' },
+    { value: 'name_conflict', label: 'ชื่อขัดแย้ง' },
+    { value: 'sex_conflict', label: 'เพศขัดแย้ง' },
+    { value: 'birthdate_conflict', label: 'วันเกิดขัดแย้ง' },
+    { value: 'death_conflict', label: 'สถานะเสียชีวิตขัดแย้ง' }
+  ],
+  'living-person-found-death': [
+    { value: 'death_file_found', label: 'พบในแฟ้ม DEATH' },
+    { value: 'patient_death_conflict', label: 'PATIENT ระบุเสียชีวิต' },
+    { value: 'person_death_date_conflict', label: 'PERSON มีวันเสียชีวิต' },
+    { value: 'death_date_conflict', label: 'วันที่เสียชีวิตขัดแย้ง' }
+  ]
+};
+
 async function initDataQualityReports() {
   if (dataQualityReports.length) return;
   const container = document.getElementById('data-quality-report-list');
@@ -55,17 +85,33 @@ function openDataQualityReport(code) {
   const initialSort = activeDataQualityReport.defaultSort || {};
   dataQualitySortBy = initialSort.field || '';
   dataQualitySortDirection = initialSort.direction === 'desc' ? 'desc' : 'asc';
+  resetDataQualityResultState();
   document.getElementById('data-quality-report-list')?.classList.add('hidden');
   document.getElementById('data-quality-report-detail')?.classList.remove('hidden');
   document.getElementById('data-quality-back')?.classList.remove('hidden');
   document.getElementById('data-quality-title').textContent = activeDataQualityReport.reportName;
   document.getElementById('data-quality-description').textContent = activeDataQualityReport.description || '';
+  const normalDescription = document.querySelector('.data-quality-card-normal .result-filter-desc');
+  if (normalDescription) normalDescription.textContent = 'ข้อมูลอยู่ในเกณฑ์ที่กำหนด';
   renderDataQualityCriteria();
   document.getElementById('data-quality-export')?.classList.toggle('hidden', !activeDataQualityReport.allowExport);
   renderDataQualityFilters();
+  renderDataQualityAbnormalTabs();
   syncDataQualityAbnormalControls();
   applyDefaultDataQualityDateRange();
   runDataQualityReport(true, true);
+}
+
+function resetDataQualityResultState() {
+  dataQualitySummary = { total: 0, normal: 0, abnormal: 0, weight_abnormal: 0, height_abnormal: 0, both_abnormal: 0 };
+  ['all', 'normal', 'abnormal'].forEach(key => {
+    const element = document.getElementById(`data-quality-count-${key}`);
+    if (element) element.textContent = '0';
+  });
+  const info = document.getElementById('data-quality-info');
+  if (info) info.textContent = 'กำลังเตรียมข้อมูลรายงาน...';
+  const pagination = document.getElementById('data-quality-pagination');
+  if (pagination) pagination.innerHTML = '';
 }
 
 function renderDataQualityCriteria() {
@@ -180,12 +226,13 @@ function setDataQualityStatus(value) {
   if (value !== 'abnormal') dataQualityAbnormalFilter = 'all';
   syncDataQualityAbnormalControls();
   document.querySelectorAll('[data-quality-status]').forEach(button => button.classList.toggle('active', button.dataset.qualityStatus === value));
-  document.getElementById('data-quality-abnormal-tabs')?.classList.toggle('hidden', value !== 'abnormal');
+  document.getElementById('data-quality-abnormal-tabs')?.classList.toggle('hidden', value !== 'abnormal' || !supportsDataQualityAbnormalGroups());
   dataQualityPage = 1; runDataQualityReport(false);
 }
 
 function setDataQualityAbnormalFilter(value) {
-  dataQualityAbnormalFilter = ['weight', 'height', 'both'].includes(value) ? value : 'all';
+  const allowed = getDataQualityAbnormalOptions().map(option => String(option.value));
+  dataQualityAbnormalFilter = allowed.includes(String(value)) ? String(value) : 'all';
   if (dataQualityAbnormalFilter !== 'all') dataQualityStatusFilter = 'abnormal';
   syncDataQualityAbnormalControls();
   dataQualityPage = 1; runDataQualityReport(false);
@@ -197,11 +244,38 @@ function syncDataQualityAbnormalSelect(value) {
 
 function syncDataQualityAbnormalControls() {
   document.querySelectorAll('[data-quality-status]').forEach(button => button.classList.toggle('active', button.dataset.qualityStatus === dataQualityStatusFilter));
-  document.getElementById('data-quality-abnormal-tabs')?.classList.toggle('hidden', dataQualityStatusFilter !== 'abnormal');
+  document.getElementById('data-quality-abnormal-tabs')?.classList.toggle('hidden', dataQualityStatusFilter !== 'abnormal' || !supportsDataQualityAbnormalGroups());
   document.querySelectorAll('[data-quality-abnormal]').forEach(button => button.classList.toggle('active', button.dataset.qualityAbnormal === dataQualityAbnormalFilter));
   const abnormalSelect = (activeDataQualityReport?.filters || []).find(filter => filter.operator === 'abnormal_group');
   const select = abnormalSelect ? document.getElementById(`dq-filter-${abnormalSelect.name}`) : null;
   if (select) select.value = dataQualityAbnormalFilter === 'all' ? '' : dataQualityAbnormalFilter;
+}
+
+function supportsDataQualityAbnormalGroups() {
+  return getDataQualityAbnormalOptions().length > 0;
+}
+
+function getDataQualityAbnormalOptions() {
+  const filter = (activeDataQualityReport?.filters || []).find(item => item.operator === 'abnormal_group' || item.name === 'abnormal_group');
+  const configured = Array.isArray(filter?.options)
+    ? filter.options.filter(option => option && String(option.value || '').trim())
+    : [];
+  if (configured.length) return configured;
+  return dataQualityAbnormalGroupFallbacks[activeDataQualityReport?.reportCode] || [];
+}
+
+function renderDataQualityAbnormalTabs() {
+  const container = document.getElementById('data-quality-abnormal-tabs');
+  if (!container) return;
+  const options = getDataQualityAbnormalOptions();
+  container.innerHTML = options.length ? `
+    <button type="button" class="data-quality-tab-all active" data-quality-abnormal="all">ทั้งหมด <strong data-quality-group-count="all">0</strong></button>
+    ${options.map((option, index) => `<button type="button" class="data-quality-tab-tone-${index % 4}" data-quality-abnormal="${escapeHtml(String(option.value))}">${escapeHtml(option.label || option.value)} <strong data-quality-group-count="${escapeHtml(String(option.value))}">0</strong></button>`).join('')}
+  ` : '';
+  container.querySelectorAll('[data-quality-abnormal]').forEach(button => {
+    button.addEventListener('click', () => setDataQualityAbnormalFilter(button.dataset.qualityAbnormal || 'all'));
+  });
+  container.classList.add('hidden');
 }
 
 function applyDataQualityFilters() { dataQualityPage = 1; runDataQualityReport(true, true); }
@@ -237,10 +311,11 @@ async function runDataQualityReport(includeSummary = false, refreshCache = false
     document.getElementById('data-quality-count-all').textContent = Number(summary.total || 0).toLocaleString();
     document.getElementById('data-quality-count-normal').textContent = Number(summary.normal || 0).toLocaleString();
     document.getElementById('data-quality-count-abnormal').textContent = Number(summary.abnormal || 0).toLocaleString();
-    document.getElementById('data-quality-tab-count-all').textContent = Number(summary.abnormal || 0).toLocaleString();
-    document.getElementById('data-quality-tab-count-weight').textContent = Number(summary.weight_abnormal || 0).toLocaleString();
-    document.getElementById('data-quality-tab-count-height').textContent = Number(summary.height_abnormal || 0).toLocaleString();
-    document.getElementById('data-quality-tab-count-both').textContent = Number(summary.both_abnormal || 0).toLocaleString();
+    document.querySelectorAll('[data-quality-group-count]').forEach(element => {
+      const group = element.dataset.qualityGroupCount;
+      const count = group === 'all' ? summary.abnormal : summary.abnormal_groups?.[group];
+      element.textContent = Number(count || 0).toLocaleString();
+    });
   }
   const suffix = result.truncated ? ` (จำกัด ${Number(result.filtered_count).toLocaleString()} รายการ)` : '';
   document.getElementById('data-quality-info').textContent = `ทั้งหมด ${Number(dataQualitySummary.total || 0).toLocaleString()} แถว | แสดงผลหลังกรอง ${Number(result.filtered_count).toLocaleString()} แถว${suffix}`;
@@ -284,6 +359,7 @@ function renderDataQualityRows(rows, columns) {
   body.innerHTML = rows.map(row => `<tr>${columns.map(column => {
     let value = row[column.field];
     if (value === null || value === undefined || value === '') value = '-';
+    if (column.type === 'sex' && value !== '-') value = formatSex(value);
     if (column.type === 'number' && value !== '-') value = Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 });
     if (column.type === 'status' && value !== '-') return `<td><span class="status-badge ${value === 'ปกติ' ? 'success' : 'warning'}">${escapeHtml(value)}</span></td>`;
     return `<td>${escapeHtml(String(value))}</td>`;

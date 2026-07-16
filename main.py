@@ -41,7 +41,7 @@ from database import get_connection
 from db_compat import start_read_only_transaction
 
 # กำหนด path
-APP_VERSION = "0.1.2"
+APP_VERSION = "0.1.3"
 APP_HOST = os.environ.get("APP_HOST", "0.0.0.0")
 APP_PORT = int(os.environ.get("PORT", "8899"))
 APP_URL = os.environ.get("APP_URL", f"http://localhost:{APP_PORT}")
@@ -1518,16 +1518,44 @@ def _validate_data_quality_sql(sql: str) -> str:
         normalized = normalized[:-1].rstrip()
     if not re.match(r"^SELECT\b", normalized, re.IGNORECASE):
         raise HTTPException(status_code=400, detail="รายงานนี้ไม่ใช่คำสั่ง SELECT")
-    if re.search(r"[;#]|--|/\*", normalized):
+    structural_sql = _sql_without_quoted_literals(normalized)
+    if re.search(r"[;#]|--|/\*", structural_sql):
         raise HTTPException(status_code=400, detail="SQL รายงานต้องมี SELECT เพียงคำสั่งเดียวและไม่ใช้ comment")
     forbidden = re.compile(
         r"\b(INSERT|UPDATE|DELETE|REPLACE|DROP|ALTER|TRUNCATE|CREATE|GRANT|REVOKE|CALL|EXECUTE|"
         r"HANDLER|LOAD|LOCK|UNLOCK|SET|INTO\s+OUTFILE|INTO\s+DUMPFILE|LOAD_FILE|SLEEP|BENCHMARK)\b",
         re.IGNORECASE,
     )
-    if forbidden.search(normalized):
+    if forbidden.search(structural_sql):
         raise HTTPException(status_code=400, detail="SQL รายงานมีคำสั่งหรือฟังก์ชันที่ไม่อนุญาต")
     return normalized
+
+
+def _sql_without_quoted_literals(sql: str) -> str:
+    """ซ่อนข้อความใน quote ก่อนตรวจ token เพื่อไม่ให้ ; หรือ -- ในข้อความถูกมองเป็นคำสั่ง SQL."""
+    output = []
+    quote = None
+    index = 0
+    while index < len(sql):
+        char = sql[index]
+        if quote:
+            output.append(" ")
+            if char == "\\" and index + 1 < len(sql):
+                index += 1
+                output.append(" ")
+            elif char == quote:
+                if index + 1 < len(sql) and sql[index + 1] == quote:
+                    index += 1
+                    output.append(" ")
+                else:
+                    quote = None
+        elif char in ("'", '"', "`"):
+            quote = char
+            output.append(" ")
+        else:
+            output.append(char)
+        index += 1
+    return "".join(output)
 
 
 def _safe_report_field(value: str) -> str:
@@ -1554,6 +1582,53 @@ def _get_data_quality_report(report_code: str) -> dict:
     return report
 
 
+DATA_QUALITY_ABNORMAL_GROUP_FALLBACKS = {
+    "abnormal-weight-height": [
+        {"value": "weight", "matches": ["weight", "both"]},
+        {"value": "height", "matches": ["height", "both"]},
+        {"value": "both", "matches": ["both"]},
+    ],
+    "living-person-basic-invalid": [
+        {"value": value} for value in (
+            "cid_invalid", "name_invalid", "sex_invalid", "birth_invalid",
+            "patient_link_invalid", "death_conflict",
+        )
+    ],
+    "living-person-patient-conflict": [
+        {"value": value} for value in (
+            "patient_missing", "cid_conflict", "name_conflict", "sex_conflict",
+            "birthdate_conflict", "death_conflict",
+        )
+    ],
+    "living-person-found-death": [
+        {"value": value} for value in (
+            "death_file_found", "patient_death_conflict",
+            "person_death_date_conflict", "death_date_conflict",
+        )
+    ],
+}
+
+
+def _data_quality_abnormal_options(report: dict) -> list:
+    for item in report.get("filters") or []:
+        if not isinstance(item, dict):
+            continue
+        if item.get("operator") == "abnormal_group" or item.get("name") == "abnormal_group":
+            options = [option for option in item.get("options") or [] if isinstance(option, dict) and option.get("value")]
+            if options:
+                return options
+    return DATA_QUALITY_ABNORMAL_GROUP_FALLBACKS.get(str(report.get("reportCode") or ""), [])
+
+
+def _data_quality_abnormal_matches(report: dict, selected: str) -> list:
+    for option in _data_quality_abnormal_options(report):
+        if str(option.get("value") or "") != str(selected or ""):
+            continue
+        matches = option.get("matches") if isinstance(option.get("matches"), list) else [option.get("value")]
+        return [str(value) for value in matches if str(value or "").strip()]
+    return []
+
+
 def _data_quality_query_parts(report: dict, request: DataQualityQueryRequest, ignored_filters=None):
     ignored_filters = set(ignored_filters or [])
     columns = report.get("columns") or []
@@ -1569,6 +1644,7 @@ def _data_quality_query_parts(report: dict, request: DataQualityQueryRequest, ig
     }
     conditions = []
     params = []
+    abnormal_group_processed = False
     operator_sql = {"eq": "=", "gte": ">=", "lte": "<=", "gt": ">", "lt": "<"}
     for item in report.get("filters") or []:
         if not isinstance(item, dict):
@@ -1585,19 +1661,25 @@ def _data_quality_query_parts(report: dict, request: DataQualityQueryRequest, ig
             conditions.append(f"CAST(report_data.`{field}` AS CHAR) LIKE %s")
             params.append(f"%{value}%")
         elif operator == "abnormal_group":
-            if value == "weight":
-                conditions.append(f"report_data.`{field}` IN ('weight', 'both')")
-            elif value == "height":
-                conditions.append(f"report_data.`{field}` IN ('height', 'both')")
-            elif value == "both":
-                conditions.append(f"report_data.`{field}` = 'both'")
-            else:
+            matches = _data_quality_abnormal_matches(report, str(value))
+            if not matches:
                 raise HTTPException(status_code=400, detail="กลุ่มความผิดปกติไม่ถูกต้อง")
+            conditions.append(f"report_data.`{field}` IN ({', '.join(['%s'] * len(matches))})")
+            params.extend(matches)
+            abnormal_group_processed = True
         elif operator in operator_sql:
             conditions.append(f"report_data.`{field}` {operator_sql[operator]} %s")
             params.append(value)
         else:
             raise HTTPException(status_code=400, detail=f"ไม่รองรับ operator: {operator}")
+
+    fallback_group = str(request.filters.get("abnormal_group") or "").strip()
+    if fallback_group and "abnormal_group" not in ignored_filters and not abnormal_group_processed:
+        matches = _data_quality_abnormal_matches(report, fallback_group)
+        if not matches:
+            raise HTTPException(status_code=400, detail="กลุ่มความผิดปกติไม่ถูกต้อง")
+        conditions.append(f"report_data.`abnormal_type` IN ({', '.join(['%s'] * len(matches))})")
+        params.extend(matches)
 
     search = str(request.search or "").strip()
     if search and searchable:
@@ -1706,14 +1788,22 @@ def _data_quality_base_filters(report: dict, filters: dict) -> dict:
     }
 
 
-def _summarize_data_quality_rows(rows: list) -> dict:
+def _summarize_data_quality_rows(rows: list, report: dict) -> dict:
+    group_counts = {
+        str(option.get("value")): sum(
+            1 for row in rows
+            if str(row.get("abnormal_type") or "") in _data_quality_abnormal_matches(report, str(option.get("value")))
+        )
+        for option in _data_quality_abnormal_options(report)
+    }
     return {
         "total": len(rows),
         "normal": sum(1 for row in rows if row.get("quality_status") == "normal"),
         "abnormal": sum(1 for row in rows if row.get("quality_status") == "abnormal"),
-        "weight_abnormal": sum(1 for row in rows if row.get("abnormal_type") in ("weight", "both")),
-        "height_abnormal": sum(1 for row in rows if row.get("abnormal_type") in ("height", "both")),
-        "both_abnormal": sum(1 for row in rows if row.get("abnormal_type") == "both"),
+        "weight_abnormal": group_counts.get("weight", 0),
+        "height_abnormal": group_counts.get("height", 0),
+        "both_abnormal": group_counts.get("both", 0),
+        "abnormal_groups": group_counts,
     }
 
 
@@ -1731,12 +1821,10 @@ def _filter_cached_data_quality_rows(report: dict, cache: dict, request: DataQua
     abnormal_group = str(request.filters.get("abnormal_group") or "")
     if quality_status:
         rows = [row for row in rows if str(row.get("quality_status") or "") == quality_status]
-    if abnormal_group == "weight":
-        rows = [row for row in rows if row.get("abnormal_type") in ("weight", "both")]
-    elif abnormal_group == "height":
-        rows = [row for row in rows if row.get("abnormal_type") in ("height", "both")]
-    elif abnormal_group == "both":
-        rows = [row for row in rows if row.get("abnormal_type") == "both"]
+    if abnormal_group:
+        matches = _data_quality_abnormal_matches(report, abnormal_group)
+        if matches:
+            rows = [row for row in rows if str(row.get("abnormal_type") or "") in matches]
 
     search = str(request.search or "").strip().lower()
     if search:
@@ -1766,6 +1854,28 @@ def _filter_cached_data_quality_rows(report: dict, cache: dict, request: DataQua
     return rows
 
 
+def _sex_display_value(value):
+    code = str(value or "").strip()
+    if code == "1":
+        return "ชาย"
+    if code == "2":
+        return "หญิง"
+    return code
+
+
+def _format_report_rows_for_export(rows: list, report: dict) -> list:
+    sex_fields = {
+        str(item.get("field")) for item in report.get("columns") or []
+        if isinstance(item, dict) and item.get("type") == "sex" and item.get("field")
+    }
+    if not sex_fields:
+        return rows
+    return [
+        {key: (_sex_display_value(value) if key in sex_fields else value) for key, value in row.items()}
+        for row in rows
+    ]
+
+
 def _refresh_data_quality_cache(report: dict, report_code: str, request: DataQualityQueryRequest, current_user: dict):
     base_request = DataQualityQueryRequest(
         filters=_data_quality_base_filters(report, request.filters),
@@ -1775,7 +1885,7 @@ def _refresh_data_quality_cache(report: dict, report_code: str, request: DataQua
     cache = {
         "report": report,
         "rows": rows,
-        "summary": _summarize_data_quality_rows(rows),
+        "summary": _summarize_data_quality_rows(rows, report),
         "truncated": truncated,
         "base_filters": base_request.filters,
         "created_at": time.time(),
@@ -1838,7 +1948,7 @@ async def export_data_quality_report(
     if not rows:
         raise HTTPException(status_code=400, detail="ไม่พบข้อมูลสำหรับส่งออก")
     columns = [item.get("field") for item in report.get("columns") or [] if item.get("field")]
-    path = export_excel(rows, columns, f"{report_code}.xlsx")
+    path = export_excel(_format_report_rows_for_export(rows, report), columns, f"{report_code}.xlsx")
     return FileResponse(
         path=path, filename=os.path.basename(path),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -2030,7 +2140,11 @@ async def export_death_audit(
     if not rows:
         raise HTTPException(status_code=400, detail="ไม่พบข้อมูลสำหรับส่งออก")
     columns = ["PERSON_CID", "PID", "FULL_NAME", "SEX", "BIRTH", "AGE", "HIS_STATUS", "CENTRAL_STATUS"]
-    path = export_excel(rows, columns, "death_status_audit.xlsx")
+    export_rows = [
+        {**row, "SEX": _sex_display_value(row.get("SEX"))}
+        for row in rows
+    ]
+    path = export_excel(export_rows, columns, "death_status_audit.xlsx")
     return FileResponse(
         path=path, filename=os.path.basename(path),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"

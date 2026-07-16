@@ -278,7 +278,7 @@ function renderPreviewTable(rows, columns) {
     bodyHtml += '<tr>';
     columns.forEach(col => {
       const value = row[col] !== null && row[col] !== undefined ? row[col] : '';
-      bodyHtml += `<td>${escapeHtml(String(value))}</td>`;
+      bodyHtml += `<td>${escapeHtml(formatTableValue(col, value))}</td>`;
     });
     bodyHtml += '</tr>';
   });
@@ -865,7 +865,7 @@ function renderResultsTable() {
           const icon = value === 'พบข้อมูล' ? '!' : (value === 'ไม่พบข้อมูล' ? '✓' : (value === 'ใช้ไม่ได้' ? '×' : '−'));
           bodyHtml += `<td class="result-symbol-cell"><span class="result-symbol-pill ${pillClass}" title="${escapeHtml(String(value))}">${icon}</span></td>`;
         } else {
-          bodyHtml += `<td>${escapeHtml(String(value))}</td>`;
+          bodyHtml += `<td>${escapeHtml(formatTableValue(col, value))}</td>`;
         }
       });
       bodyHtml += '</tr>';

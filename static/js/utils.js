@@ -206,6 +206,22 @@ function hideLoading() {
 
 // ---- Utility Functions ----
 
+function formatSex(value) {
+  const code = String(value ?? '').trim();
+  if (code === '1') return 'ชาย';
+  if (code === '2') return 'หญิง';
+  return code || '-';
+}
+
+function isSexColumn(columnName) {
+  const name = String(columnName ?? '').trim().toUpperCase();
+  return name === 'SEX' || name === 'เพศ' || name.endsWith('_SEX') || name.startsWith('SEX_');
+}
+
+function formatTableValue(columnName, value) {
+  return isSexColumn(columnName) ? formatSex(value) : String(value ?? '');
+}
+
 function formatDate(dateStr) {
   if (!dateStr) return '-';
   try {

@@ -22,9 +22,10 @@
 
 ## Release ปัจจุบัน
 
-- Version: `v0.1.2`
-- รายละเอียด: [`RELEASE_NOTES_v0.1.2.md`](RELEASE_NOTES_v0.1.2.md)
-- ขั้นตอนเผยแพร่สำหรับผู้ดูแล: [`RELEASE_CHECKLIST_v0.1.2.md`](RELEASE_CHECKLIST_v0.1.2.md)
+- Version: `v0.1.3`
+- รายละเอียด: [`RELEASE_NOTES_v0.1.3.md`](RELEASE_NOTES_v0.1.3.md)
+- ขั้นตอนเผยแพร่สำหรับผู้ดูแล: [`RELEASE_CHECKLIST_v0.1.3.md`](RELEASE_CHECKLIST_v0.1.3.md)
+- Workflow มาตรฐานสำหรับ Release รุ่นถัดไป: [`RELEASE_WORKFLOW.md`](RELEASE_WORKFLOW.md)
 
 ## วิธีรันบน Windows
 

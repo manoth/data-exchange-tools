@@ -122,7 +122,7 @@ function renderDeathAuditRows(rows) {
       <td class="center-cell">${escapeHtml(row.PERSON_CID || '-')}</td>
       <td class="center-cell">${escapeHtml(row.PID || '-')}</td>
       <td>${escapeHtml(row.FULL_NAME || '-')}</td>
-      <td class="center-cell">${escapeHtml(row.SEX || '-')}</td>
+      <td class="center-cell">${escapeHtml(formatSex(row.SEX))}</td>
       <td class="center-cell">${escapeHtml(row.BIRTH || '-')}</td>
       <td class="center-cell">${escapeHtml(row.AGE ?? '-')}</td>
       <td class="center-cell"><span class="audit-pill audit-pill-alive">${escapeHtml(row.HIS_STATUS || '-')}</span></td>
