@@ -1,3 +1,4 @@
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -16,7 +17,10 @@ class StoragePathTests(unittest.TestCase):
             source_dir=r"C:\source",
         )
 
-        self.assertEqual(result, r"C:\Users\Demo\AppData\Local/DataExchangeTools")
+        self.assertEqual(
+            result,
+            os.path.join(r"C:\Users\Demo\AppData\Local", "DataExchangeTools"),
+        )
 
     def test_data_dir_override_remains_supported(self):
         result = resolve_app_dir(
