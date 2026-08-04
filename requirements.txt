@@ -7,3 +7,4 @@ python-jose==3.3.0
 python-multipart==0.0.6
 pydantic==2.13.4
 aiofiles==23.2.1
+pyinstaller==6.21.0

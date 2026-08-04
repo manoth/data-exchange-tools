@@ -36,6 +36,7 @@
 - สร้าง `RELEASE_NOTES_vX.Y.Z.md`
 - สร้าง `RELEASE_CHECKLIST_vX.Y.Z.md`
 - สร้าง `scripts/build_release_X_Y_Z.ps1`
+- หลัง build ต้องตรวจภายใน EXE ว่ามี `static/index.html` ก่อนสร้างไฟล์ Release
 - ตรวจว่าสคริปต์ PowerShell เป็น ASCII เพื่อรองรับ Windows PowerShell 5.1
 - อัปเดตหรือเพิ่ม release consistency check ให้ตรงกับ version ใหม่
 - ลบเฉพาะไฟล์ทดลองที่ยืนยันแล้วว่าไม่ถูกใช้งานและไม่ควรถูก bundle ใน EXE
@@ -125,6 +126,8 @@ release\DataExchangeTools.exe
 release\DataExchangeTools-vX.Y.Z.exe
 release\latest.json
 ```
+
+สคริปต์ต้องรัน `scripts\check_exe_bundle.py` และหยุด build ทันทีถ้าไม่พบ `static/index.html` ภายใน EXE
 
 Codex ต้องสอนตรวจ `latest.json` และ SHA256:
 

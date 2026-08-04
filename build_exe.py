@@ -9,9 +9,63 @@ Script สำหรับ build Data Exchange Tools เป็นไฟล์ .ex
     3. ไฟล์ .exe จะอยู่ที่: dist/DataExchangeTools.exe
 """
 
+import os
 import subprocess
 import sys
-import os
+
+
+def create_pyinstaller_command(base_dir):
+    """Create a deterministic PyInstaller command for the application."""
+    main_script = os.path.join(base_dir, 'main.py')
+    static_dir = os.path.join(base_dir, 'static')
+    static_index = os.path.join(static_dir, 'index.html')
+
+    if not os.path.isfile(main_script):
+        raise FileNotFoundError(f"ไม่พบไฟล์โปรแกรมหลัก: {main_script}")
+    if not os.path.isfile(static_index):
+        raise FileNotFoundError(f"ไม่พบไฟล์หน้าเว็บที่ต้อง bundle: {static_index}")
+
+    # PyInstaller 6 uses SOURCE:DEST on every supported platform. Using
+    # os.pathsep here produces a semicolon on Windows and can silently omit
+    # the frontend from a one-file executable.
+    add_data = f'--add-data={static_dir}:static'
+
+    cmd = [
+        sys.executable, '-m', 'PyInstaller',
+        '--clean',
+        '--noconfirm',
+        '--onefile',
+        '--name', 'DataExchangeTools',
+        '--windowed',
+        add_data,
+        '--hidden-import=uvicorn.logging',
+        '--hidden-import=uvicorn.loops',
+        '--hidden-import=uvicorn.loops.auto',
+        '--hidden-import=uvicorn.protocols',
+        '--hidden-import=uvicorn.protocols.http',
+        '--hidden-import=uvicorn.protocols.http.auto',
+        '--hidden-import=uvicorn.protocols.websockets',
+        '--hidden-import=uvicorn.protocols.websockets.auto',
+        '--hidden-import=uvicorn.lifespan',
+        '--hidden-import=uvicorn.lifespan.on',
+        '--hidden-import=uvicorn.lifespan.off',
+        '--hidden-import=pymysql',
+        '--hidden-import=openpyxl',
+        '--hidden-import=jose',
+        '--hidden-import=multipart',
+        '--hidden-import=cryptography',
+        '--hidden-import=cryptography.fernet',
+        '--collect-all=uvicorn',
+        '--collect-all=fastapi',
+        '--collect-all=starlette',
+    ]
+
+    ico_path = os.path.join(static_dir, 'images', 'favicon.ico')
+    if os.path.exists(ico_path):
+        cmd.append(f'--icon={ico_path}')
+
+    cmd.append(main_script)
+    return cmd
 
 def build():
     """Build the application into a single executable"""
@@ -44,48 +98,11 @@ def build():
         subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'pyinstaller'])
         print("✅ ติดตั้ง PyInstaller สำเร็จ")
 
-    # กำหนด path
-    main_script = os.path.join(base_dir, 'main.py')
-    static_dir = os.path.join(base_dir, 'static')
-    icon_path = os.path.join(static_dir, 'images', 'logo.png')
-
-    # สร้างคำสั่ง PyInstaller
-    cmd = [
-        sys.executable, '-m', 'PyInstaller',
-        '--clean',                            # ล้าง cache ของ PyInstaller ก่อน build
-        '--onefile',                          # รวมเป็นไฟล์เดียว
-        '--name', 'DataExchangeTools',        # ชื่อไฟล์ .exe
-        '--windowed',                         # ไม่แสดง console window (ใช้ --console ถ้าต้องการ debug)
-        f'--add-data={static_dir}{os.pathsep}static',  # รวมไฟล์ static
-        '--hidden-import=uvicorn.logging',
-        '--hidden-import=uvicorn.loops',
-        '--hidden-import=uvicorn.loops.auto',
-        '--hidden-import=uvicorn.protocols',
-        '--hidden-import=uvicorn.protocols.http',
-        '--hidden-import=uvicorn.protocols.http.auto',
-        '--hidden-import=uvicorn.protocols.websockets',
-        '--hidden-import=uvicorn.protocols.websockets.auto',
-        '--hidden-import=uvicorn.lifespan',
-        '--hidden-import=uvicorn.lifespan.on',
-        '--hidden-import=uvicorn.lifespan.off',
-        '--hidden-import=pymysql',
-        '--hidden-import=openpyxl',
-        '--hidden-import=jose',
-        '--hidden-import=multipart',
-        '--hidden-import=cryptography',
-        '--hidden-import=cryptography.fernet',
-        '--collect-all=uvicorn',
-        '--collect-all=fastapi',
-        '--collect-all=starlette',
-    ]
-
-    # เพิ่ม icon ถ้ามี .ico file
-    ico_path = os.path.join(static_dir, 'images', 'favicon.ico')
-    if os.path.exists(ico_path):
-        cmd.append(f'--icon={ico_path}')
-
-    # เพิ่ม main script
-    cmd.append(main_script)
+    try:
+        cmd = create_pyinstaller_command(base_dir)
+    except FileNotFoundError as exc:
+        print(f"\n❌ {exc}")
+        sys.exit(1)
 
     print("\n🔨 กำลัง build ไฟล์ .exe...")
     print(f"   คำสั่ง: {' '.join(cmd)}\n")

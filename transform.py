@@ -19,7 +19,7 @@ from config import APP_DIR, load_agent_config, save_agent_api_key, clear_agent_a
 UPLOADS_DIR = os.path.join(APP_DIR, "uploads")
 CENTRAL_API_URL = os.environ.get("CENTRAL_API_URL", "https://apicpho.moph.go.th").rstrip("/")
 CENTRAL_API_ENROLLMENT_TOKEN = os.environ.get("CENTRAL_API_ENROLLMENT_TOKEN", "data-exchange-agent-enroll-dev-token")
-APP_VERSION = os.environ.get("APP_VERSION", "0.1.6")
+APP_VERSION = os.environ.get("APP_VERSION", "0.1.7")
 APP_PORT = int(os.environ.get("PORT", "8899"))
 CENTRAL_DEATH_LOOKUP_BATCH_SIZE = max(50, min(int(os.environ.get("CENTRAL_DEATH_LOOKUP_BATCH_SIZE", "250")), 1000))
 CENTRAL_DEATH_LOOKUP_TIMEOUT_SECONDS = max(15, min(int(os.environ.get("CENTRAL_DEATH_LOOKUP_TIMEOUT_SECONDS", "45")), 120))

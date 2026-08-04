@@ -36,9 +36,12 @@ def main() -> None:
     require_pattern(ROOT / "static" / "index.html", rf"\?v={escaped}", "static cache version mismatch")
 
     notes = ROOT / f"RELEASE_NOTES_v{version}.md"
+    checklist = ROOT / f"RELEASE_CHECKLIST_v{version}.md"
     build_script = ROOT / "scripts" / f"build_release_{version.replace('.', '_')}.ps1"
     if not notes.is_file():
         raise SystemExit(f"Release check failed: missing {notes.name}")
+    if not checklist.is_file():
+        raise SystemExit(f"Release check failed: missing {checklist.name}")
     if not build_script.is_file():
         raise SystemExit(f"Release check failed: missing {build_script.relative_to(ROOT)}")
     try:
