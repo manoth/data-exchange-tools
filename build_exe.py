@@ -55,6 +55,7 @@ def create_pyinstaller_command(base_dir):
         '--hidden-import=multipart',
         '--hidden-import=cryptography',
         '--hidden-import=cryptography.fernet',
+        '--hidden-import=windows_launcher',
         '--collect-all=uvicorn',
         '--collect-all=fastapi',
         '--collect-all=starlette',

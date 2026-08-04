@@ -22,6 +22,8 @@ admin.json
 agent.json
 .key
 .jwt_secret
+.launcher_secret
+installed.json
 data/
 uploads/*
 !uploads/.gitkeep

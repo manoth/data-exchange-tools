@@ -72,6 +72,7 @@ KEY_FILE = os.path.join(APP_DIR, ".key")
 JWT_SECRET_FILE = os.path.join(APP_DIR, ".jwt_secret")
 ADMIN_FILE = os.path.join(APP_DIR, "admin.json")
 AGENT_CONFIG_FILE = os.path.join(APP_DIR, "agent.json")
+LAUNCHER_SECRET_FILE = os.path.join(APP_DIR, ".launcher_secret")
 DEFAULT_ADMIN_USERNAME = "admin"
 DEFAULT_ADMIN_PASSWORD = "admin"
 PBKDF2_ITERATIONS = 260000
@@ -114,6 +115,18 @@ def get_jwt_secret() -> str:
             return f.read().strip()
     secret = Fernet.generate_key().decode()
     with open(JWT_SECRET_FILE, "w") as f:
+        f.write(secret)
+    return secret
+
+
+def get_launcher_secret() -> str:
+    """Create or load the local secret used for controlled service handoff."""
+    os.makedirs(APP_DIR, exist_ok=True)
+    if os.path.exists(LAUNCHER_SECRET_FILE):
+        with open(LAUNCHER_SECRET_FILE, "r", encoding="utf-8") as f:
+            return f.read().strip()
+    secret = secrets.token_urlsafe(32)
+    with open(LAUNCHER_SECRET_FILE, "w", encoding="utf-8") as f:
         f.write(secret)
     return secret
 

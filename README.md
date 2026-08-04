@@ -26,9 +26,9 @@
 
 ## Release ปัจจุบัน
 
-- Version: `v0.1.8`
-- รายละเอียด: [`RELEASE_NOTES_v0.1.8.md`](RELEASE_NOTES_v0.1.8.md)
-- ขั้นตอน Pull, Build Windows และเผยแพร่: [`RELEASE_CHECKLIST_v0.1.8.md`](RELEASE_CHECKLIST_v0.1.8.md)
+- Version: `v0.1.9`
+- รายละเอียด: [`RELEASE_NOTES_v0.1.9.md`](RELEASE_NOTES_v0.1.9.md)
+- ขั้นตอน Pull, Build Windows และเผยแพร่: [`RELEASE_CHECKLIST_v0.1.9.md`](RELEASE_CHECKLIST_v0.1.9.md)
 - Workflow มาตรฐานสำหรับ Release รุ่นถัดไป: [`RELEASE_WORKFLOW.md`](RELEASE_WORKFLOW.md)
 
 ## วิธีรันบน Windows
