@@ -7,7 +7,7 @@
   <title>Data Exchange Tools</title>
   <link rel="icon" href="/static/images/favicon.ico">
   <link rel="apple-touch-icon" href="/static/images/logo.png">
-  <link rel="stylesheet" href="/static/css/style.css?v=0.1.7">
+  <link rel="stylesheet" href="/static/css/style.css?v=0.1.8">
 </head>
 <body>
 
@@ -288,7 +288,7 @@
         </button>
       </div>
       <div class="sidebar-footer">
-        <span class="version-text">v0.1.7</span>
+        <span class="version-text">v0.1.8</span>
       </div>
     </aside>
 
@@ -722,6 +722,15 @@
           </div>
         </div>
         <div class="glass-card" style="margin-top: 18px;">
+          <h3>ที่เก็บข้อมูลโปรแกรม</h3>
+          <p class="text-secondary" style="margin-top: 8px; margin-bottom: 10px;">EXE สามารถวางไว้ที่ Desktop หรือโฟลเดอร์ใดก็ได้ ไฟล์ตั้งค่า key log และไฟล์ทำงานจะเก็บแยกไว้ในโฟลเดอร์มาตรฐาน</p>
+          <code id="settings-storage-path" style="display:block; overflow-wrap:anywhere; margin-bottom:16px;">กำลังโหลด...</code>
+          <button type="button" class="btn btn-secondary" id="settings-open-storage-btn" onclick="openProgramDataFolder()">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h5l2 2h11v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M3 6v12"/></svg>
+            เปิดโฟลเดอร์ข้อมูลโปรแกรม
+          </button>
+        </div>
+        <div class="glass-card" style="margin-top: 18px;">
           <h3>รหัสผ่านผู้ดูแลระบบ</h3>
           <p class="text-secondary" style="margin-top: 8px; margin-bottom: 16px;">เปลี่ยนรหัสผ่านของบัญชี admin โดยต้องยืนยันรหัสผ่านเดิมก่อนทุกครั้ง</p>
           <button type="button" class="btn btn-secondary" onclick="openAdminPasswordModal()">
@@ -874,13 +883,13 @@
 </div>
 
 <!-- Scripts -->
-<script src="/static/js/utils.js?v=0.1.7"></script>
-<script src="/static/js/auth.js?v=0.1.7"></script>
-<script src="/static/js/config.js?v=0.1.7"></script>
-  <script src="/static/js/upload.js?v=0.1.7"></script>
-<script src="/static/js/death-audit.js?v=0.1.7"></script>
-<script src="/static/js/deceased-service-audit.js?v=0.1.7"></script>
-<script src="/static/js/data-quality.js?v=0.1.7"></script>
-<script src="/static/js/app.js?v=0.1.7"></script>
+<script src="/static/js/utils.js?v=0.1.8"></script>
+<script src="/static/js/auth.js?v=0.1.8"></script>
+<script src="/static/js/config.js?v=0.1.8"></script>
+  <script src="/static/js/upload.js?v=0.1.8"></script>
+<script src="/static/js/death-audit.js?v=0.1.8"></script>
+<script src="/static/js/deceased-service-audit.js?v=0.1.8"></script>
+<script src="/static/js/data-quality.js?v=0.1.8"></script>
+<script src="/static/js/app.js?v=0.1.8"></script>
 </body>
 </html>

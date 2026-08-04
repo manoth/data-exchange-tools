@@ -360,6 +360,41 @@ async function loadSettingsStatus() {
   }
 
   loadApiCenterInfo();
+  loadProgramStorageInfo();
+}
+
+async function loadProgramStorageInfo() {
+  const pathElement = document.getElementById('settings-storage-path');
+  const openButton = document.getElementById('settings-open-storage-btn');
+  if (!pathElement) return;
+
+  try {
+    const result = await api('/api/admin/storage', { method: 'GET' });
+    if (!result || !result.success) {
+      throw new Error(result?.message || 'ไม่สามารถโหลดที่เก็บข้อมูลได้');
+    }
+    pathElement.textContent = result.data_dir || '-';
+    if (openButton) openButton.disabled = false;
+  } catch (error) {
+    pathElement.textContent = '-';
+    if (openButton) openButton.disabled = true;
+  }
+}
+
+async function openProgramDataFolder() {
+  const openButton = document.getElementById('settings-open-storage-btn');
+  if (openButton) openButton.disabled = true;
+  try {
+    const result = await api('/api/admin/storage/open', { method: 'POST' });
+    if (!result || !result.success) {
+      throw new Error(result?.message || 'ไม่สามารถเปิดโฟลเดอร์ได้');
+    }
+    showToast(result.message || 'เปิดโฟลเดอร์ข้อมูลแล้ว', 'success');
+  } catch (error) {
+    showToast(error.message || 'ไม่สามารถเปิดโฟลเดอร์ข้อมูลได้', 'error');
+  } finally {
+    if (openButton) openButton.disabled = false;
+  }
 }
 
 async function loadApiCenterInfo() {

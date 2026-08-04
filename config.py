@@ -10,20 +10,63 @@ import base64
 import hashlib
 import hmac
 import secrets
+import shutil
 from typing import Optional, Tuple
 from cryptography.fernet import Fernet
 from db_compat import connect_compatible, database_error_message
 
-# กำหนด path สำหรับไฟล์ config
-# When bundled with PyInstaller, keep writable files beside the .exe instead of
-# inside the temporary extraction folder.
-DATA_DIR = os.environ.get("DATA_DIR")
-if DATA_DIR:
-    APP_DIR = DATA_DIR
-elif getattr(sys, "frozen", False):
-    APP_DIR = os.path.dirname(sys.executable)
-else:
-    APP_DIR = os.path.dirname(os.path.abspath(__file__))
+# เก็บไฟล์ที่เขียนได้ในโฟลเดอร์มาตรฐาน ไม่วาง config/key ข้าง EXE บน Desktop
+def resolve_app_dir(data_dir, frozen, executable, platform_name, environ, source_dir):
+    if data_dir:
+        return os.path.abspath(os.path.expanduser(data_dir))
+    if frozen and platform_name == "nt":
+        local_app_data = environ.get("LOCALAPPDATA") or environ.get("APPDATA")
+        if local_app_data:
+            return os.path.join(local_app_data, "DataExchangeTools")
+        return os.path.join(os.path.dirname(executable), "DataExchangeToolsData")
+    if frozen:
+        return os.path.dirname(executable)
+    return source_dir
+
+
+def migrate_legacy_state(legacy_dir, target_dir):
+    """Copy legacy state beside the EXE once, without deleting user files."""
+    if os.path.normcase(os.path.abspath(legacy_dir)) == os.path.normcase(os.path.abspath(target_dir)):
+        return []
+
+    migrated = []
+    os.makedirs(target_dir, exist_ok=True)
+    # Copy the encryption key before encrypted configuration files.
+    for filename in (".key", ".jwt_secret", "admin.json", "config.json", "agent.json"):
+        source = os.path.join(legacy_dir, filename)
+        destination = os.path.join(target_dir, filename)
+        if not os.path.isfile(source) or os.path.exists(destination):
+            continue
+        temporary = destination + ".migrating"
+        shutil.copy2(source, temporary)
+        os.replace(temporary, destination)
+        migrated.append(filename)
+    return migrated
+
+
+DATA_DIR = os.environ.get("DATA_DIR", "").strip()
+IS_FROZEN = bool(getattr(sys, "frozen", False))
+LEGACY_APP_DIR = os.path.dirname(sys.executable) if IS_FROZEN else os.path.dirname(os.path.abspath(__file__))
+APP_DIR = resolve_app_dir(
+    DATA_DIR,
+    IS_FROZEN,
+    sys.executable,
+    os.name,
+    os.environ,
+    os.path.dirname(os.path.abspath(__file__)),
+)
+if IS_FROZEN and os.name == "nt" and not DATA_DIR:
+    try:
+        migrate_legacy_state(LEGACY_APP_DIR, APP_DIR)
+    except OSError:
+        # Failure to migrate must not prevent the application from starting;
+        # the original files remain untouched for manual recovery.
+        pass
 CONFIG_FILE = os.path.join(APP_DIR, "config.json")
 KEY_FILE = os.path.join(APP_DIR, ".key")
 JWT_SECRET_FILE = os.path.join(APP_DIR, ".jwt_secret")

@@ -41,7 +41,7 @@ from database import get_connection
 from db_compat import start_read_only_transaction
 
 # กำหนด path
-APP_VERSION = "0.1.7"
+APP_VERSION = "0.1.8"
 APP_HOST = os.environ.get("APP_HOST", "0.0.0.0")
 APP_PORT = int(os.environ.get("PORT", "8899"))
 APP_URL = os.environ.get("APP_URL", f"http://localhost:{APP_PORT}")
@@ -1230,6 +1230,40 @@ def _ensure_windows_client_integration():
 # ────────────────────────────────────────────
 # Config Endpoints (ไม่ต้อง auth)
 # ────────────────────────────────────────────
+
+def _open_local_folder(path: str):
+    """Open a trusted local folder with the operating system file manager."""
+    os.makedirs(path, exist_ok=True)
+    if os.name == "nt":
+        os.startfile(path)
+        return
+    command = ["open", path] if sys.platform == "darwin" else ["xdg-open", path]
+    subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+@app.get("/api/admin/storage")
+async def admin_storage_info(current_admin: dict = Depends(get_current_admin)):
+    return {
+        "success": True,
+        "data_dir": os.path.abspath(APP_DIR),
+        "uploads_dir": os.path.abspath(UPLOADS_DIR),
+        "updates_dir": os.path.abspath(UPDATE_DIR),
+        "executable_path": os.path.abspath(sys.executable) if getattr(sys, "frozen", False) else "",
+        "portable_exe": bool(getattr(sys, "frozen", False)),
+    }
+
+
+@app.post("/api/admin/storage/open")
+async def admin_open_storage(current_admin: dict = Depends(get_current_admin)):
+    try:
+        _open_local_folder(APP_DIR)
+        return {"success": True, "message": "เปิดโฟลเดอร์ข้อมูลโปรแกรมแล้ว"}
+    except Exception as exc:
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "message": f"ไม่สามารถเปิดโฟลเดอร์ข้อมูลได้: {exc}"},
+        )
+
 
 @app.get("/api/config/status")
 async def config_status():
