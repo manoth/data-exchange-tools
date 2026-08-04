@@ -20,7 +20,7 @@ import time
 import zipfile
 import socket
 import re
-from datetime import datetime
+from datetime import date, datetime
 
 from fastapi import FastAPI, File, UploadFile, Request, HTTPException, Depends
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
@@ -41,7 +41,7 @@ from database import get_connection
 from db_compat import start_read_only_transaction
 
 # กำหนด path
-APP_VERSION = "0.1.4"
+APP_VERSION = "0.1.5"
 APP_HOST = os.environ.get("APP_HOST", "0.0.0.0")
 APP_PORT = int(os.environ.get("PORT", "8899"))
 APP_URL = os.environ.get("APP_URL", f"http://localhost:{APP_PORT}")
@@ -96,6 +96,12 @@ data_quality_cache_lock = threading.Lock()
 data_quality_report_cache = {}
 death_audit_state = {
     "status": "idle", "rows": [], "processed": 0, "total": 0,
+    "started_at": None, "completed_at": None, "message": "",
+}
+deceased_service_audit_lock = threading.Lock()
+deceased_service_audit_state = {
+    "status": "idle", "rows": [], "processed": 0, "total": 0,
+    "target_count": 0, "missing_death_date_count": 0,
     "started_at": None, "completed_at": None, "message": "",
 }
 
@@ -2010,8 +2016,10 @@ def _death_audit_worker():
             if not lookup.get("available"):
                 raise RuntimeError(lookup.get("message") or "ไม่สามารถเชื่อมต่อ API Center")
             matched = {str(value).strip() for value in lookup.get("matched", set())}
+            matched_people = lookup.get("matched_persons") or {}
             for person in batch:
                 cid = str(person.get("cid") or "").strip()
+                central_person = matched_people.get(cid) or {}
                 birthdate = person.get("birthdate")
                 if hasattr(birthdate, "strftime"):
                     birthdate = birthdate.strftime("%Y-%m-%d")
@@ -2029,6 +2037,8 @@ def _death_audit_worker():
                     "AGE": _calculate_age_years(birthdate),
                     "HIS_STATUS": "ยังมีชีวิต",
                     "CENTRAL_STATUS": "พบว่าเสียชีวิตแล้ว" if cid in matched else "ไม่พบข้อมูลการตาย",
+                    "CENTRAL_DEATH_DATE": _as_iso_date(central_person.get("death_date")) or "",
+                    "CENTRAL_DEATH_CAUSE": str(central_person.get("death_cause_code") or "").strip(),
                     "_central_death": cid in matched,
                 })
             with death_audit_lock:
@@ -2066,12 +2076,15 @@ def _filter_death_audit_rows(
         rows = [row for row in rows if row.get("_central_death")]
     term = (search or "").strip().casefold()
     if term:
-        columns = ("PERSON_CID", "PID", "FULL_NAME", "SEX", "BIRTH", "AGE", "CENTRAL_STATUS")
+        columns = (
+            "PERSON_CID", "PID", "FULL_NAME", "SEX", "BIRTH", "AGE", "CENTRAL_STATUS",
+            "CENTRAL_DEATH_DATE", "CENTRAL_DEATH_CAUSE",
+        )
         rows = [row for row in rows if any(term in str(row.get(col, "")).casefold() for col in columns)]
 
     sortable_columns = {
         "PERSON_CID", "PID", "FULL_NAME", "SEX", "BIRTH", "AGE",
-        "HIS_STATUS", "CENTRAL_STATUS",
+        "HIS_STATUS", "CENTRAL_STATUS", "CENTRAL_DEATH_DATE", "CENTRAL_DEATH_CAUSE",
     }
     if sort_by in sortable_columns:
         numeric_columns = {"PERSON_CID", "PID", "SEX", "AGE"}
@@ -2139,7 +2152,10 @@ async def export_death_audit(
     )
     if not rows:
         raise HTTPException(status_code=400, detail="ไม่พบข้อมูลสำหรับส่งออก")
-    columns = ["PERSON_CID", "PID", "FULL_NAME", "SEX", "BIRTH", "AGE", "HIS_STATUS", "CENTRAL_STATUS"]
+    columns = [
+        "PERSON_CID", "PID", "FULL_NAME", "SEX", "BIRTH", "AGE", "HIS_STATUS",
+        "CENTRAL_STATUS", "CENTRAL_DEATH_DATE", "CENTRAL_DEATH_CAUSE",
+    ]
     export_rows = [
         {**row, "SEX": _sex_display_value(row.get("SEX"))}
         for row in rows
@@ -2149,6 +2165,259 @@ async def export_death_audit(
         path=path, filename=os.path.basename(path),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
+
+
+def _as_iso_date(value):
+    """Normalize a HIS/API date to YYYY-MM-DD, or return None."""
+    if value is None or value == "":
+        return None
+    if isinstance(value, datetime):
+        return value.date().isoformat()
+    if isinstance(value, date):
+        return value.isoformat()
+    text = str(value).strip()[:10]
+    try:
+        return datetime.strptime(text, "%Y-%m-%d").date().isoformat()
+    except (TypeError, ValueError):
+        return None
+
+
+def _build_deceased_service_rows(people, central_people, visits):
+    """Group every visit after the central death date into one row per CID."""
+    targets = {}
+    hn_to_cids = {}
+    for person in people:
+        cid = str(person.get("cid") or "").strip()
+        central = central_people.get(cid) or {}
+        death_date = _as_iso_date(central.get("death_date"))
+        if not death_date:
+            continue
+        target = targets.setdefault(cid, {
+            "PERSON_CID": cid,
+            "PID": str(person.get("person_id") or "").strip(),
+            "HN": set(),
+            "FULL_NAME": "".join([
+                str(person.get("pname") or "").strip(),
+                str(person.get("fname") or "").strip(),
+                " ", str(person.get("lname") or "").strip(),
+            ]).strip(),
+            "DEATH_DATE": death_date,
+            "DEATH_CAUSE": str(central.get("death_cause_code") or "").strip(),
+            "_services": [],
+        })
+        hn = str(person.get("patient_hn") or "").strip()
+        if hn:
+            target["HN"].add(hn)
+            hn_to_cids.setdefault(hn, set()).add(cid)
+
+    for visit in visits:
+        hn = str(visit.get("hn") or "").strip()
+        visit_date = _as_iso_date(visit.get("vstdate"))
+        if not visit_date:
+            continue
+        for cid in hn_to_cids.get(hn, set()):
+            target = targets[cid]
+            if visit_date <= target["DEATH_DATE"]:
+                continue
+            death_day = datetime.strptime(target["DEATH_DATE"], "%Y-%m-%d").date()
+            service_day = datetime.strptime(visit_date, "%Y-%m-%d").date()
+            visit_time = visit.get("vsttime")
+            if hasattr(visit_time, "strftime"):
+                visit_time = visit_time.strftime("%H:%M:%S")
+            target["_services"].append({
+                "VN": str(visit.get("vn") or "").strip(),
+                "HN": hn,
+                "SERVICE_DATE": visit_date,
+                "SERVICE_TIME": str(visit_time or "").strip(),
+                "DAYS_AFTER_DEATH": (service_day - death_day).days,
+            })
+
+    rows = []
+    for target in targets.values():
+        services = sorted(
+            target["_services"],
+            key=lambda item: (item["SERVICE_DATE"], item["SERVICE_TIME"], item["VN"]),
+        )
+        if not services:
+            continue
+        rows.append({
+            **target,
+            "HN": ", ".join(sorted(target["HN"])),
+            "SERVICE_COUNT": len(services),
+            "FIRST_SERVICE_DATE": services[0]["SERVICE_DATE"],
+            "LAST_SERVICE_DATE": services[-1]["SERVICE_DATE"],
+            "MAX_DAYS_AFTER_DEATH": max(item["DAYS_AFTER_DEATH"] for item in services),
+            "_services": services,
+        })
+    return sorted(rows, key=lambda item: (item["DEATH_DATE"], item["PERSON_CID"]), reverse=True)
+
+
+def _deceased_service_audit_worker():
+    connection = None
+    try:
+        with deceased_service_audit_lock:
+            deceased_service_audit_state.update({
+                "status": "running", "rows": [], "processed": 0, "total": 0,
+                "target_count": 0, "missing_death_date_count": 0,
+                "started_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "completed_at": None, "message": "กำลังอ่านข้อมูล PERSON จาก HIS",
+            })
+
+        connection = get_connection()
+        start_read_only_transaction(connection)
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT person_id, cid, pname, fname, lname, patient_hn
+                FROM person
+                WHERE cid IS NOT NULL
+                  AND CHAR_LENGTH(TRIM(cid)) = 13
+                  AND TRIM(cid) REGEXP '^[0-9]{13}$'
+                ORDER BY person_id
+                """
+            )
+            people = cursor.fetchall() or []
+
+        with deceased_service_audit_lock:
+            deceased_service_audit_state.update({
+                "total": len(people),
+                "message": "กำลังเทียบ CID กับฐานข้อมูลการตายส่วนกลาง",
+            })
+
+        central_people = {}
+        central_match_count = 0
+        for start in range(0, len(people), 1000):
+            batch = people[start:start + 1000]
+            lookup = lookup_central_death_pids([row.get("cid") for row in batch])
+            if not lookup.get("available"):
+                raise RuntimeError(lookup.get("message") or "ไม่สามารถเชื่อมต่อ API Center")
+            central_people.update(lookup.get("matched_persons") or {})
+            central_match_count += len(lookup.get("matched") or set())
+            with deceased_service_audit_lock:
+                deceased_service_audit_state["processed"] = min(start + len(batch), len(people))
+
+        matched_cids = {
+            str(cid).strip()
+            for cid in central_people
+            if str(cid).strip()
+        }
+        if central_match_count and not matched_cids:
+            raise RuntimeError("API Center พบข้อมูลการตาย แต่ยังไม่ส่งวันที่ตาย กรุณาอัปเดต API Center เป็นเวอร์ชันล่าสุด")
+
+        valid_cids = {
+            cid for cid, person in central_people.items()
+            if _as_iso_date((person or {}).get("death_date"))
+        }
+        target_people = [row for row in people if str(row.get("cid") or "").strip() in valid_cids]
+        target_hns = sorted({
+            str(row.get("patient_hn") or "").strip()
+            for row in target_people if str(row.get("patient_hn") or "").strip()
+        })
+        earliest_death_date = min(
+            (_as_iso_date((central_people[cid] or {}).get("death_date")) for cid in valid_cids),
+            default=None,
+        )
+        visits = []
+        with deceased_service_audit_lock:
+            deceased_service_audit_state.update({
+                "target_count": len(valid_cids),
+                "missing_death_date_count": len(matched_cids - valid_cids),
+                "message": "กำลังตรวจสอบแฟ้ม SERVICE (OVST) หลังวันที่ตาย",
+            })
+
+        with connection.cursor() as cursor:
+            for start in range(0, len(target_hns), 500):
+                chunk = target_hns[start:start + 500]
+                placeholders = ",".join(["%s"] * len(chunk))
+                cursor.execute(
+                    f"""
+                    SELECT vn, hn, vstdate, vsttime
+                    FROM ovst
+                    WHERE hn IN ({placeholders})
+                      AND vstdate > %s
+                    ORDER BY hn, vstdate, vsttime, vn
+                    """,
+                    [*chunk, earliest_death_date],
+                )
+                visits.extend(cursor.fetchall() or [])
+
+        rows = _build_deceased_service_rows(target_people, central_people, visits)
+        with deceased_service_audit_lock:
+            deceased_service_audit_state.update({
+                "status": "completed", "rows": rows,
+                "processed": len(people), "total": len(people),
+                "completed_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "message": "ตรวจสอบเสร็จแล้ว",
+            })
+    except Exception as exc:
+        with deceased_service_audit_lock:
+            deceased_service_audit_state.update({"status": "error", "message": str(exc)})
+    finally:
+        if connection:
+            try:
+                connection.rollback()
+                connection.close()
+            except Exception:
+                pass
+
+
+def _filter_deceased_service_rows(search=""):
+    with deceased_service_audit_lock:
+        rows = list(deceased_service_audit_state.get("rows", []))
+    term = str(search or "").strip().casefold()
+    if not term:
+        return rows
+    columns = ("PERSON_CID", "PID", "HN", "FULL_NAME", "DEATH_DATE", "FIRST_SERVICE_DATE", "LAST_SERVICE_DATE")
+    return [row for row in rows if any(term in str(row.get(key, "")).casefold() for key in columns)]
+
+
+@app.post("/api/deceased-service-audit/start")
+async def start_deceased_service_audit(current_user: dict = Depends(get_current_user)):
+    with deceased_service_audit_lock:
+        if deceased_service_audit_state.get("status") in ("starting", "running"):
+            return {"success": True, "message": "กำลังตรวจสอบอยู่"}
+        deceased_service_audit_state.update({"status": "starting", "message": "กำลังเตรียมข้อมูล"})
+    threading.Thread(target=_deceased_service_audit_worker, daemon=True).start()
+    return {"success": True, "message": "เริ่มตรวจสอบแล้ว"}
+
+
+@app.get("/api/deceased-service-audit/results")
+async def get_deceased_service_audit_results(
+    search: str = "", page: int = 1, page_size: int = 20,
+    current_user: dict = Depends(get_current_user),
+):
+    page = max(1, page)
+    page_size = max(1, min(page_size, 200))
+    rows = _filter_deceased_service_rows(search)
+    with deceased_service_audit_lock:
+        state = {key: value for key, value in deceased_service_audit_state.items() if key != "rows"}
+        total_people = len(deceased_service_audit_state.get("rows", []))
+        total_services = sum(row.get("SERVICE_COUNT", 0) for row in deceased_service_audit_state.get("rows", []))
+    start = (page - 1) * page_size
+    public_rows = [
+        {key: value for key, value in row.items() if not key.startswith("_")}
+        for row in rows[start:start + page_size]
+    ]
+    return {
+        "success": True, "state": state, "rows": public_rows,
+        "counts": {"people": total_people, "services": total_services},
+        "filtered_count": len(rows), "page": page, "page_size": page_size,
+    }
+
+
+@app.get("/api/deceased-service-audit/person/{cid}")
+async def get_deceased_service_person_detail(
+    cid: str, current_user: dict = Depends(get_current_user),
+):
+    with deceased_service_audit_lock:
+        row = next((item for item in deceased_service_audit_state.get("rows", []) if item.get("PERSON_CID") == cid), None)
+    if not row:
+        raise HTTPException(status_code=404, detail="ไม่พบข้อมูลบุคคลนี้ในผลตรวจสอบล่าสุด")
+    return {
+        "success": True,
+        "person": {key: value for key, value in row.items() if not key.startswith("_")},
+        "services": list(row.get("_services", [])),
+    }
 
 @app.post("/api/upload")
 async def upload_file(
@@ -2654,7 +2923,10 @@ async def get_history_detail(
 
     transformed_columns = upload_info.get("transformed_columns")
     if not transformed_columns:
-        transformed_columns = ["PERSON_CID", "FULL_NAME", "เงื่อนไขที่ใช้", "เทียบตาย"] + list(upload_info.get("columns", []))
+        transformed_columns = [
+            "PERSON_CID", "FULL_NAME", "เงื่อนไขที่ใช้", "เทียบตาย",
+            "วันที่ตาย (ส่วนกลาง)", "สาเหตุการตาย (ส่วนกลาง)",
+        ] + list(upload_info.get("columns", []))
     return {
         "success": True,
         "file_id": file_id,

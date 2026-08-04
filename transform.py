@@ -18,7 +18,7 @@ from config import APP_DIR, load_agent_config, save_agent_api_key, clear_agent_a
 UPLOADS_DIR = os.path.join(APP_DIR, "uploads")
 CENTRAL_API_URL = os.environ.get("CENTRAL_API_URL", "https://apicpho.moph.go.th").rstrip("/")
 CENTRAL_API_ENROLLMENT_TOKEN = os.environ.get("CENTRAL_API_ENROLLMENT_TOKEN", "data-exchange-agent-enroll-dev-token")
-APP_VERSION = os.environ.get("APP_VERSION", "0.1.4")
+APP_VERSION = os.environ.get("APP_VERSION", "0.1.5")
 APP_PORT = int(os.environ.get("PORT", "8899"))
 
 
@@ -259,6 +259,7 @@ def _lookup_central_death_pids(pids: list) -> dict:
         }
 
     matched = set()
+    matched_persons = {}
     failed_batches = 0
     total_batches = 0
     last_error = ""
@@ -288,6 +289,16 @@ def _lookup_central_death_pids(pids: list) -> dict:
             data = result.get("data") or {}
             for pid in data.get("matchedPids") or []:
                 matched.add(_normalize_central_person_key(pid))
+            for person in data.get("matchedPersons") or []:
+                pid = _normalize_central_person_key((person or {}).get("pid"))
+                if not pid:
+                    continue
+                matched.add(pid)
+                matched_persons[pid] = {
+                    "pid": pid,
+                    "death_date": str((person or {}).get("deathDate") or "").strip(),
+                    "death_cause_code": str((person or {}).get("deathCauseCode") or "").strip(),
+                }
 
     if total_batches > 0 and failed_batches == total_batches:
         return {
@@ -301,6 +312,7 @@ def _lookup_central_death_pids(pids: list) -> dict:
         message = "เทียบข้อมูลการตายกับส่วนกลางได้บางส่วน เนื่องจากบางชุดข้อมูลติดต่อ API Center ไม่สำเร็จ"
     return {
         "matched": matched,
+        "matched_persons": matched_persons,
         "available": True,
         "message": message,
     }
@@ -392,7 +404,10 @@ def transform_data(file_id: str, data: list, columns: list, selected_hoscodes: l
         birth_column = column_by_name.get("BIRTH")
         name_column = column_by_name.get("NAME")
         lname_column = column_by_name.get("LNAME")
-        person_columns = ["PERSON_CID", "FULL_NAME", "เงื่อนไขที่ใช้", "เทียบตาย"]
+        person_columns = [
+            "PERSON_CID", "FULL_NAME", "เงื่อนไขที่ใช้", "เทียบตาย",
+            "วันที่ตาย (ส่วนกลาง)", "สาเหตุการตาย (ส่วนกลาง)",
+        ]
 
         selected_hoscodes = [str(code).strip() for code in (selected_hoscodes or []) if str(code).strip()]
         if selected_hoscodes:
@@ -408,6 +423,8 @@ def transform_data(file_id: str, data: list, columns: list, selected_hoscodes: l
                 "FULL_NAME": "",
                 "เงื่อนไขที่ใช้": "ไม่พบข้อมูล",
                 "เทียบตาย": "-",
+                "วันที่ตาย (ส่วนกลาง)": "-",
+                "สาเหตุการตาย (ส่วนกลาง)": "-",
                 "_matched": False,
                 "_pid_matched": False,
                 "_cid_matched": False,
@@ -585,16 +602,20 @@ def transform_data(file_id: str, data: list, columns: list, selected_hoscodes: l
         if central_death_candidates:
             death_lookup_result = _lookup_central_death_pids(list(central_death_candidates.keys()))
             matched_death_pids = death_lookup_result.get("matched", set())
+            matched_death_people = death_lookup_result.get("matched_persons", {})
             central_death_lookup_available = bool(death_lookup_result.get("available"))
             central_death_lookup_message = death_lookup_result.get("message", "")
             for pid, candidate_rows in central_death_candidates.items():
                 found = pid in matched_death_pids
+                central_person = matched_death_people.get(pid) or {}
                 for candidate_row in candidate_rows:
                     if central_death_lookup_available:
                         candidate_row["เทียบตาย"] = "พบข้อมูล" if found else "ไม่พบข้อมูล"
                     else:
                         candidate_row["เทียบตาย"] = "ใช้ไม่ได้"
                     candidate_row["_central_death_mismatch"] = found
+                    candidate_row["วันที่ตาย (ส่วนกลาง)"] = (central_person.get("death_date") or "-") if found else "-"
+                    candidate_row["สาเหตุการตาย (ส่วนกลาง)"] = (central_person.get("death_cause_code") or "-") if found else "-"
                     if found:
                         central_death_mismatch_count += 1
 

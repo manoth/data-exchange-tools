@@ -7,7 +7,7 @@
   <title>Data Exchange Tools</title>
   <link rel="icon" href="/static/images/favicon.ico">
   <link rel="apple-touch-icon" href="/static/images/logo.png">
-  <link rel="stylesheet" href="/static/css/style.css?v=0.1.4">
+  <link rel="stylesheet" href="/static/css/style.css?v=0.1.5">
 </head>
 <body>
 
@@ -288,7 +288,7 @@
         </button>
       </div>
       <div class="sidebar-footer">
-        <span class="version-text">v0.1.4</span>
+        <span class="version-text">v0.1.5</span>
       </div>
     </aside>
 
@@ -554,6 +554,32 @@
           <div class="table-container datatable-container"><table class="data-table data-quality-table"><thead id="data-quality-thead"></thead><tbody id="data-quality-tbody"></tbody></table></div>
           <div class="pagination" id="data-quality-pagination"></div>
         </div>
+
+        <div id="deceased-service-report" class="hidden">
+          <div id="deceased-service-empty" class="death-audit-empty">
+            <button class="btn btn-primary death-audit-start-button" onclick="startDeceasedServiceAudit()">
+              <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m7 16 4-5 4 3 5-7"/></svg>
+              เริ่มตรวจสอบข้อมูล
+            </button>
+          </div>
+          <div id="deceased-service-results" class="hidden">
+            <div id="deceased-service-notice" class="connection-status hidden"></div>
+            <div class="result-filter-cards deceased-service-summary-cards">
+              <div class="result-filter-card active"><span class="result-filter-title">ผู้เสียชีวิตที่มารับบริการภายหลัง</span><strong id="deceased-service-people-count">0</strong><span class="result-filter-desc">แสดงหนึ่งแถวต่อหนึ่งคน</span></div>
+              <div class="result-filter-card result-filter-card-warning"><span class="result-filter-title">รายการรับบริการหลังตาย</span><strong id="deceased-service-visit-count">0</strong><span class="result-filter-desc">รวมทุกวันที่รับบริการหลังวันที่ตาย</span></div>
+              <div class="result-filter-card"><span class="result-filter-title">เป้าหมายจาก API การตาย</span><strong id="deceased-service-target-count">0</strong><span class="result-filter-desc">CID ที่มีวันที่ตายจากส่วนกลาง</span></div>
+            </div>
+            <div class="controls-bar data-quality-controls">
+              <div class="controls-primary-row">
+                <div class="search-wrapper"><span class="search-icon"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg></span><input class="search-input" id="deceased-service-search" placeholder="ค้นหา CID, HN, PID หรือชื่อ..." oninput="queueDeceasedServiceSearch()"></div>
+                <button class="btn btn-secondary" id="deceased-service-run" onclick="startDeceasedServiceAudit()">ตรวจสอบข้อมูลใหม่</button>
+              </div>
+              <div class="controls-secondary-row"><div class="controls-secondary-left"><select class="rows-select" id="deceased-service-page-size" onchange="changeDeceasedServicePageSize(this.value)"><option value="20">20 แถว</option><option value="50">50 แถว</option><option value="100">100 แถว</option><option value="200">200 แถว</option></select></div><div class="datatable-info" id="deceased-service-info">ยังไม่ได้ตรวจสอบข้อมูล</div></div>
+            </div>
+            <div class="table-container table-responsive datatable-container"><table class="data-table deceased-service-table"><thead><tr><th>เลขประจำตัวประชาชน</th><th>PID / HN</th><th>ชื่อ-สกุล</th><th>วันที่ตาย</th><th>สาเหตุการตาย (ICD-10)</th><th>รับบริการหลังตาย</th><th>ครั้งแรก</th><th>ครั้งล่าสุด</th><th>รายละเอียด</th></tr></thead><tbody id="deceased-service-tbody"></tbody></table></div>
+            <div class="pagination" id="deceased-service-pagination"></div>
+          </div>
+        </div>
       </div>
 
       <!-- ==================== Death Status Audit Section ==================== -->
@@ -631,8 +657,10 @@
               <th class="sortable" data-audit-sort="AGE" onclick="setDeathAuditSort('AGE')">อายุ (ปี)<span class="sort-indicator"></span></th>
               <th class="sortable" data-audit-sort="HIS_STATUS" onclick="setDeathAuditSort('HIS_STATUS')">สถานะใน HIS<span class="sort-indicator"></span></th>
               <th class="sortable" data-audit-sort="CENTRAL_STATUS" onclick="setDeathAuditSort('CENTRAL_STATUS')">ผลเทียบส่วนกลาง<span class="sort-indicator"></span></th>
+              <th class="sortable" data-audit-sort="CENTRAL_DEATH_DATE" onclick="setDeathAuditSort('CENTRAL_DEATH_DATE')">วันที่ตาย (ส่วนกลาง)<span class="sort-indicator"></span></th>
+              <th class="sortable" data-audit-sort="CENTRAL_DEATH_CAUSE" onclick="setDeathAuditSort('CENTRAL_DEATH_CAUSE')">สาเหตุการตาย (ICD-10)<span class="sort-indicator"></span></th>
             </tr></thead>
-            <tbody id="death-audit-tbody"><tr><td colspan="8"><div class="empty-state"><p>กด “ตรวจสอบข้อมูลใหม่” เพื่อเริ่มตรวจสอบ</p></div></td></tr></tbody>
+            <tbody id="death-audit-tbody"><tr><td colspan="10"><div class="empty-state"><p>กด “ตรวจสอบข้อมูลใหม่” เพื่อเริ่มตรวจสอบ</p></div></td></tr></tbody>
           </table>
           </div>
           <div class="pagination" id="death-audit-pagination"></div>
@@ -692,6 +720,14 @@
               จัดการการเชื่อมต่อ
             </button>
           </div>
+        </div>
+        <div class="glass-card" style="margin-top: 18px;">
+          <h3>รหัสผ่านผู้ดูแลระบบ</h3>
+          <p class="text-secondary" style="margin-top: 8px; margin-bottom: 16px;">เปลี่ยนรหัสผ่านของบัญชี admin โดยต้องยืนยันรหัสผ่านเดิมก่อนทุกครั้ง</p>
+          <button type="button" class="btn btn-secondary" onclick="openAdminPasswordModal()">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 7a5 5 0 1 0-5 5"/><path d="m21 2-9.6 9.6"/><path d="m15 5 2 2"/><path d="m18 2 2 2"/><path d="M9 12v8"/><path d="M6 17h6"/></svg>
+            จัดการรหัสผ่านผู้ดูแลระบบ
+          </button>
         </div>
         <div class="glass-card" style="margin-top: 18px;">
           <div class="readonly-api-panel readonly-api-panel-standalone" id="settings-api-center-panel">
@@ -771,6 +807,50 @@
   </div>
 </div>
 
+<div id="admin-password-modal" class="modal-overlay hidden" onclick="closeAdminPasswordModal(event)">
+  <div class="modal admin-password-modal" role="dialog" aria-modal="true" aria-labelledby="admin-password-modal-title">
+    <div class="modal-header">
+      <div>
+        <h3 id="admin-password-modal-title">จัดการรหัสผ่านผู้ดูแลระบบ</h3>
+        <p class="text-secondary">กรอกรหัสผ่านเดิมเพื่อยืนยันก่อนตั้งรหัสผ่านใหม่</p>
+      </div>
+      <button type="button" class="btn btn-icon" aria-label="ปิดหน้าต่างเปลี่ยนรหัสผ่าน" onclick="closeAdminPasswordModal()">×</button>
+    </div>
+    <form id="settings-admin-password-form" class="settings-password-form" onsubmit="changeAdminPasswordFromSettings(event)">
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="settings-admin-old-password">รหัสผ่านเดิม</label>
+          <div class="input-wrapper">
+            <span class="input-icon"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
+            <input type="password" id="settings-admin-old-password" required autocomplete="current-password" placeholder="กรอกรหัสผ่าน admin เดิม">
+            <button type="button" class="password-toggle" tabindex="-1" aria-label="แสดงหรือซ่อนรหัสผ่านเดิม" onclick="togglePassword(this)"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/></svg></button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="settings-admin-new-password">รหัสผ่านใหม่</label>
+          <div class="input-wrapper">
+            <span class="input-icon"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-8 9-4.5-1.5-8-4-8-9V5l8-3 8 3z"/></svg></span>
+            <input type="password" id="settings-admin-new-password" required autocomplete="new-password" placeholder="อย่างน้อย 8 ตัว พร้อมพิมพ์เล็ก พิมพ์ใหญ่ ตัวเลข และอักขระพิเศษ">
+            <button type="button" class="password-toggle" tabindex="-1" aria-label="แสดงหรือซ่อนรหัสผ่านใหม่" onclick="togglePassword(this)"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/></svg></button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="settings-admin-confirm-password">ยืนยันรหัสผ่านใหม่</label>
+          <div class="input-wrapper">
+            <span class="input-icon"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+            <input type="password" id="settings-admin-confirm-password" required autocomplete="new-password" placeholder="กรอกรหัสผ่านใหม่อีกครั้ง">
+            <button type="button" class="password-toggle" tabindex="-1" aria-label="แสดงหรือซ่อนการยืนยันรหัสผ่านใหม่" onclick="togglePassword(this)"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/></svg></button>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" onclick="closeAdminPasswordModal()">ยกเลิก</button>
+        <button type="submit" id="settings-admin-password-submit" class="btn btn-primary">บันทึกรหัสผ่านใหม่</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 <div id="data-quality-store-modal" class="modal-overlay hidden" onclick="closeDataQualityReportStore(event)">
   <div class="modal report-store-modal" role="dialog" aria-modal="true" aria-labelledby="data-quality-store-title">
     <div class="modal-header">
@@ -782,13 +862,25 @@
   </div>
 </div>
 
+<div id="deceased-service-modal" class="modal-overlay hidden" onclick="closeDeceasedServiceModal(event)">
+  <div class="modal deceased-service-modal" role="dialog" aria-modal="true" aria-labelledby="deceased-service-modal-title">
+    <div class="modal-header">
+      <div><h3 id="deceased-service-modal-title">รายละเอียดการรับบริการหลังเสียชีวิต</h3><p class="text-secondary" id="deceased-service-person-summary"></p></div>
+      <button type="button" class="btn btn-icon" aria-label="ปิด" onclick="closeDeceasedServiceModal()">×</button>
+    </div>
+    <div class="modal-body"><div class="table-container table-responsive"><table class="data-table"><thead><tr><th>วันที่รับบริการ</th><th>เวลา</th><th>HN</th><th>VN</th><th>จำนวนวันหลังตาย</th></tr></thead><tbody id="deceased-service-detail-tbody"></tbody></table></div></div>
+    <div class="modal-footer"><button type="button" class="btn btn-secondary" onclick="closeDeceasedServiceModal()">ปิด</button></div>
+  </div>
+</div>
+
 <!-- Scripts -->
-<script src="/static/js/utils.js?v=0.1.4"></script>
-<script src="/static/js/auth.js?v=0.1.4"></script>
-<script src="/static/js/config.js?v=0.1.4"></script>
-  <script src="/static/js/upload.js?v=0.1.4"></script>
-<script src="/static/js/death-audit.js?v=0.1.4"></script>
-<script src="/static/js/data-quality.js?v=0.1.4"></script>
-<script src="/static/js/app.js?v=0.1.4"></script>
+<script src="/static/js/utils.js?v=0.1.5"></script>
+<script src="/static/js/auth.js?v=0.1.5"></script>
+<script src="/static/js/config.js?v=0.1.5"></script>
+  <script src="/static/js/upload.js?v=0.1.5"></script>
+<script src="/static/js/death-audit.js?v=0.1.5"></script>
+<script src="/static/js/deceased-service-audit.js?v=0.1.5"></script>
+<script src="/static/js/data-quality.js?v=0.1.5"></script>
+<script src="/static/js/app.js?v=0.1.5"></script>
 </body>
 </html>

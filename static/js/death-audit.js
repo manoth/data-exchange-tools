@@ -114,7 +114,7 @@ function renderDeathAuditRows(rows) {
   const body = document.getElementById('death-audit-tbody');
   if (!body) return;
   if (!rows.length) {
-    body.innerHTML = '<tr><td colspan="8"><div class="empty-state"><p>ไม่พบข้อมูลตามเงื่อนไข</p></div></td></tr>';
+    body.innerHTML = '<tr><td colspan="10"><div class="empty-state"><p>ไม่พบข้อมูลตามเงื่อนไข</p></div></td></tr>';
     return;
   }
   body.innerHTML = rows.map(row => `
@@ -127,6 +127,8 @@ function renderDeathAuditRows(rows) {
       <td class="center-cell">${escapeHtml(row.AGE ?? '-')}</td>
       <td class="center-cell"><span class="audit-pill audit-pill-alive">${escapeHtml(row.HIS_STATUS || '-')}</span></td>
       <td class="center-cell"><span class="audit-pill ${row.CENTRAL_STATUS === 'พบว่าเสียชีวิตแล้ว' ? 'audit-pill-deceased' : 'audit-pill-clear'}">${escapeHtml(row.CENTRAL_STATUS || '-')}</span></td>
+      <td class="center-cell">${escapeHtml(row.CENTRAL_DEATH_DATE || '-')}</td>
+      <td class="center-cell">${escapeHtml(row.CENTRAL_DEATH_CAUSE || '-')}</td>
     </tr>`).join('');
 }
 

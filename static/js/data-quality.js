@@ -11,6 +11,13 @@ let dataQualityStatusFilter = 'all';
 let dataQualityAbnormalFilter = 'all';
 let dataQualitySummary = { total: 0, normal: 0, abnormal: 0, weight_abnormal: 0, height_abnormal: 0, both_abnormal: 0 };
 let dataQualityLoadingCount = 0;
+const deceasedServiceReportCode = 'deceased-service-after-death';
+const deceasedServiceReport = {
+  reportCode: deceasedServiceReportCode,
+  reportName: 'ตายแล้วมารับบริการ',
+  category: 'ข้อมูลบุคคลและบริการ',
+  description: 'เทียบ PERSON กับ API การตาย แล้วตรวจการรับบริการหลังวันที่ตายแบบกลุ่มรายบุคคล'
+};
 
 const dataQualityAbnormalGroupFallbacks = {
   'abnormal-weight-height': [
@@ -50,7 +57,15 @@ async function initDataQualityReports() {
   try {
     const result = await api('/api/data-quality/reports');
     if (!result?.success) {
-      container.innerHTML = `<div class="empty-state"><p>${escapeHtml(result?.detail || 'ไม่สามารถโหลดรายงานจาก Control ได้')}</p></div>`;
+      dataQualityReportCatalog = [];
+      dataQualityReportsLoaded = true;
+      rebuildInstalledDataQualityReports();
+      renderDataQualityReportList();
+      const notice = document.getElementById('data-quality-notice');
+      if (notice) {
+        notice.textContent = result?.detail || 'ไม่สามารถโหลดรายงานจาก Control ได้ แต่ยังใช้รายงานภายในเครื่องได้';
+        notice.classList.remove('hidden');
+      }
       return;
     }
     dataQualityReportCatalog = result.reports || [];
@@ -129,11 +144,8 @@ function toggleOptionalDataQualityReport(code, enabled) {
 function renderDataQualityReportList() {
   const container = document.getElementById('data-quality-report-list');
   if (!container) return;
-  if (!dataQualityReports.length) {
-    container.innerHTML = '<div class="empty-state"><p>Control ยังไม่ได้เปิดใช้งานรายงานคุณภาพข้อมูล</p></div>';
-    return;
-  }
-  container.innerHTML = dataQualityReports.map(report => `
+  const visibleReports = [...dataQualityReports, deceasedServiceReport];
+  container.innerHTML = visibleReports.map(report => `
     <button type="button" class="data-quality-report-card glass-card" data-report-code="${escapeHtml(report.reportCode)}">
       <span class="data-quality-card-icon"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19V9"/><path d="M10 19V5"/><path d="M16 19v-7"/><path d="M22 19V3"/></svg></span>
       <span class="data-quality-card-content"><small>${escapeHtml(report.category || 'คุณภาพข้อมูล')}${report.publicationMode === 'optional' ? ' · รายงานทางเลือก' : ''}</small><strong>${escapeHtml(report.reportName)}</strong><span>${escapeHtml(report.description || '')}</span></span>
@@ -145,6 +157,10 @@ function renderDataQualityReportList() {
 }
 
 function openDataQualityReport(code) {
+  if (code === deceasedServiceReportCode) {
+    openDeceasedServiceReport();
+    return;
+  }
   activeDataQualityReport = dataQualityReports.find(item => item.reportCode === code);
   if (!activeDataQualityReport) return;
   dataQualityPage = 1;
@@ -214,6 +230,7 @@ function showDataQualityReportList() {
   activeDataQualityReport = null;
   document.getElementById('data-quality-report-list')?.classList.remove('hidden');
   document.getElementById('data-quality-report-detail')?.classList.add('hidden');
+  document.getElementById('deceased-service-report')?.classList.add('hidden');
   document.getElementById('data-quality-back')?.classList.add('hidden');
   document.getElementById('data-quality-store')?.classList.remove('hidden');
   document.getElementById('data-quality-title').textContent = 'ตรวจสอบคุณภาพข้อมูล';

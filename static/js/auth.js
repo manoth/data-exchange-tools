@@ -182,6 +182,79 @@ async function changeAdminPassword(event) {
   }
 }
 
+async function changeAdminPasswordFromSettings(event) {
+  event.preventDefault();
+
+  const oldPassword = document.getElementById('settings-admin-old-password').value;
+  const newPassword = document.getElementById('settings-admin-new-password').value;
+  const confirmPassword = document.getElementById('settings-admin-confirm-password').value;
+  const submitButton = document.getElementById('settings-admin-password-submit');
+
+  if (newPassword !== confirmPassword) {
+    showToast('ยืนยันรหัสผ่านใหม่ไม่ตรงกัน', 'warning');
+    return;
+  }
+
+  const validationError = validateAdminPasswordClient(newPassword, oldPassword);
+  if (validationError) {
+    showToast(validationError, 'warning');
+    return;
+  }
+
+  submitButton.disabled = true;
+  try {
+    const result = await api('/api/admin/change-password', {
+      method: 'POST',
+      body: JSON.stringify({
+        old_password: oldPassword,
+        new_password: newPassword
+      })
+    });
+
+    if (result && result.success) {
+      closeAdminPasswordModal();
+      removeToken();
+      removeUserData();
+      showPage('login');
+      showToast('เปลี่ยนรหัสผ่าน admin สำเร็จ กรุณาเข้าสู่ระบบใหม่', 'success');
+    } else {
+      showToast(result?.message || 'ไม่สามารถเปลี่ยนรหัสผ่านได้', 'error');
+    }
+  } catch {
+    showToast('เกิดข้อผิดพลาดในการเปลี่ยนรหัสผ่าน', 'error');
+  } finally {
+    submitButton.disabled = false;
+  }
+}
+
+function resetAdminPasswordModal() {
+  const form = document.getElementById('settings-admin-password-form');
+  if (form) {
+    form.reset();
+    form.querySelectorAll('input').forEach(input => {
+      input.type = 'password';
+    });
+  }
+  const submitButton = document.getElementById('settings-admin-password-submit');
+  if (submitButton) submitButton.disabled = false;
+}
+
+function openAdminPasswordModal() {
+  const modal = document.getElementById('admin-password-modal');
+  if (!modal) return;
+  resetAdminPasswordModal();
+  modal.classList.remove('hidden');
+  document.getElementById('settings-admin-old-password')?.focus();
+}
+
+function closeAdminPasswordModal(event) {
+  if (event && event.target !== event.currentTarget) return;
+  const modal = document.getElementById('admin-password-modal');
+  if (!modal) return;
+  modal.classList.add('hidden');
+  resetAdminPasswordModal();
+}
+
 /**
  * Check if user is authenticated
  * Returns true if token exists

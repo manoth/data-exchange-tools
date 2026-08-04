@@ -440,6 +440,28 @@ select option {
   height: 20px;
 }
 
+.settings-password-form {
+  width: 100%;
+}
+
+.settings-password-form .input-wrapper input {
+  padding-right: 48px;
+}
+
+.admin-password-modal {
+  max-width: 560px;
+  background: rgba(7, 27, 34, 0.98);
+}
+
+.admin-password-modal .modal-header > div {
+  display: grid;
+  gap: 4px;
+}
+
+.admin-password-modal .modal-header p {
+  margin: 0;
+}
+
 /* Error Messages */
 .error-message {
   color: var(--error);
@@ -1982,11 +2004,24 @@ table {
 .status-badge.warning { color: var(--warning); background: rgba(251, 191, 36, .12); border: 1px solid rgba(251, 191, 36, .28); }
 .status-badge.success { color: var(--success); background: rgba(74, 222, 128, .12); border: 1px solid rgba(74, 222, 128, .28); }
 
+.deceased-service-summary-cards {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-bottom: 18px;
+}
+.deceased-service-table th,
+.deceased-service-table td { white-space: nowrap; }
+.deceased-service-detail-button { min-height: 36px; padding: 7px 12px; }
+.deceased-service-modal { width: min(920px, 94vw); max-width: 920px; }
+.deceased-service-modal .modal-header > div { display: grid; gap: 4px; }
+.deceased-service-modal .modal-header p { margin: 0; }
+.deceased-service-modal .modal-body { max-height: min(65vh, 620px); overflow: auto; }
+
 @media (max-width: 720px) {
   .data-quality-report-grid { grid-template-columns: 1fr; }
   .data-quality-filter-heading { align-items: stretch; flex-direction: column; }
   .data-quality-header-actions { width: 100%; flex-wrap: wrap; }
   .report-store-modal .modal-footer { align-items: stretch; flex-direction: column; }
+  .deceased-service-summary-cards { grid-template-columns: 1fr; }
 }
 .death-audit-header p { margin-top: 5px; }
 .death-audit-empty {
