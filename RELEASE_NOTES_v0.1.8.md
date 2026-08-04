@@ -6,6 +6,7 @@
 
 - เก็บ config, encryption key, JWT secret, Agent API key, uploads, updates และ log ไว้ที่ `%LOCALAPPDATA%\DataExchangeTools`
 - ไม่สร้างไฟล์ตั้งค่าข้าง EXE อีก จึงไม่ทำให้ Desktop รก
+- ถ้า EXE วางอยู่บน Desktop อยู่แล้ว ระบบจะไม่สร้าง shortcut `.url` ซ้ำ และจะลบเฉพาะ shortcut เดิมที่โปรแกรมเคยสร้างไว้ให้อัตโนมัติ
 - ยังรองรับ environment variable `DATA_DIR` สำหรับหน่วยงานที่ต้องกำหนดที่เก็บเอง
 - เมื่อเปิด v0.1.8 ครั้งแรก ระบบจะคัดลอก config และ key จากข้าง EXE รุ่นเดิมไปยังที่ใหม่อัตโนมัติ
 - การย้ายจะไม่ลบไฟล์เดิม และไม่เขียนทับไฟล์ที่มีอยู่ในที่ใหม่

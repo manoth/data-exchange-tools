@@ -36,7 +36,7 @@ $ActualHash -eq $Manifest.windows_exe_sha256.ToLower()
 
 - คัดลอก EXE เพียงไฟล์เดียวไปวางที่ Desktop
 - เปิด EXE แล้วต้องเห็นหน้า Login ปกติ
-- Desktop ต้องไม่มี `config.json`, `.key`, `.jwt_secret`, `agent.json`, `admin.json`, `uploads` หรือ `updates` ถูกสร้างข้าง EXE
+- Desktop ต้องไม่มี `config.json`, `.key`, `.jwt_secret`, `agent.json`, `admin.json`, `uploads`, `updates` หรือ shortcut `.url` ซ้ำถูกสร้างข้าง EXE
 - ตรวจว่า `%LOCALAPPDATA%\DataExchangeTools` ถูกสร้าง
 - ไปที่ Settings แล้วกด `เปิดโฟลเดอร์ข้อมูลโปรแกรม` ต้องเปิดโฟลเดอร์ถูกต้อง
 - ทดสอบอัปเกรดจาก v0.1.7 ที่มี config/key อยู่ข้าง EXE ค่าตั้งเดิมต้องถูกคัดลอกไปใช้งานต่อได้
