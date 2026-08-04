@@ -12,6 +12,8 @@
 
 ## Workflow ที่ Codex ต้องทำทุกครั้ง
 
+เมื่อ source ของ version ใหม่ผ่าน release checks และอยู่ในสถานะพร้อมนำไป Build แล้ว Codex ต้อง stage เฉพาะไฟล์ในขอบเขต Release และ commit ให้เรียบร้อยในรอบเดียวกัน ไม่ปล่อยงานพร้อม Build ค้างแบบยังไม่ commit ส่วนการ push, tag และ Publish GitHub Release ให้ทำตามคำสั่งและลำดับความปลอดภัยด้านล่าง
+
 เมื่อผู้ใช้ขอ Release version ใหม่ Codex ต้องดำเนินการตามลำดับต่อไปนี้
 
 ### 1. ตรวจสถานะ Agent repository

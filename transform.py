@@ -8,6 +8,7 @@ import json
 import urllib.error
 import urllib.request
 import socket
+import time
 from datetime import date, datetime
 from openpyxl import load_workbook, Workbook
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
@@ -18,8 +19,11 @@ from config import APP_DIR, load_agent_config, save_agent_api_key, clear_agent_a
 UPLOADS_DIR = os.path.join(APP_DIR, "uploads")
 CENTRAL_API_URL = os.environ.get("CENTRAL_API_URL", "https://apicpho.moph.go.th").rstrip("/")
 CENTRAL_API_ENROLLMENT_TOKEN = os.environ.get("CENTRAL_API_ENROLLMENT_TOKEN", "data-exchange-agent-enroll-dev-token")
-APP_VERSION = os.environ.get("APP_VERSION", "0.1.5")
+APP_VERSION = os.environ.get("APP_VERSION", "0.1.6")
 APP_PORT = int(os.environ.get("PORT", "8899"))
+CENTRAL_DEATH_LOOKUP_BATCH_SIZE = max(50, min(int(os.environ.get("CENTRAL_DEATH_LOOKUP_BATCH_SIZE", "250")), 1000))
+CENTRAL_DEATH_LOOKUP_TIMEOUT_SECONDS = max(15, min(int(os.environ.get("CENTRAL_DEATH_LOOKUP_TIMEOUT_SECONDS", "45")), 120))
+CENTRAL_DEATH_LOOKUP_MAX_ATTEMPTS = max(1, min(int(os.environ.get("CENTRAL_DEATH_LOOKUP_MAX_ATTEMPTS", "3")), 5))
 
 
 def _get_agent_uid() -> str:
@@ -263,26 +267,15 @@ def _lookup_central_death_pids(pids: list) -> dict:
     failed_batches = 0
     total_batches = 0
     last_error = ""
-    for batch in _chunks(clean_pids, 1000):
+    for batch in _chunks(clean_pids, CENTRAL_DEATH_LOOKUP_BATCH_SIZE):
         total_batches += 1
         try:
-            result = _request_central_death_lookup(batch)
-        except urllib.error.HTTPError as exc:
-            if exc.code in (401, 403):
-                try:
-                    _ensure_agent_api_key_for_lookup(force=True)
-                    result = _request_central_death_lookup(batch)
-                except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, RuntimeError) as retry_exc:
-                    failed_batches += 1
-                    last_error = str(retry_exc)
-                    continue
-            else:
-                failed_batches += 1
-                last_error = str(exc)
-                continue
-        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+            result = _request_central_death_lookup_with_retry(batch)
+        except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError, RuntimeError) as exc:
             failed_batches += 1
             last_error = str(exc)
+            if not matched and failed_batches == total_batches:
+                break
             continue
 
         if result.get("ok"):
@@ -304,7 +297,7 @@ def _lookup_central_death_pids(pids: list) -> dict:
         return {
             "matched": set(),
             "available": False,
-            "message": f"ไม่สามารถเชื่อมต่อ API Center เพื่อเทียบข้อมูลการตายกับส่วนกลางได้ ({last_error or 'connection failed'})",
+            "message": _central_death_connection_error_message(last_error),
         }
 
     message = ""
@@ -326,8 +319,46 @@ def _request_central_death_lookup(batch: list) -> dict:
         headers=_agent_api_headers(),
         method="POST",
     )
-    with urllib.request.urlopen(request, timeout=15) as response:
+    with urllib.request.urlopen(request, timeout=CENTRAL_DEATH_LOOKUP_TIMEOUT_SECONDS) as response:
         return json.loads(response.read().decode("utf-8"))
+
+
+def _request_central_death_lookup_with_retry(batch: list) -> dict:
+    """Retry transient network/server failures and refresh an expired Agent key once."""
+    last_error = None
+    refreshed_key = False
+    for attempt in range(1, CENTRAL_DEATH_LOOKUP_MAX_ATTEMPTS + 1):
+        try:
+            return _request_central_death_lookup(batch)
+        except urllib.error.HTTPError as exc:
+            last_error = exc
+            if exc.code in (401, 403) and not refreshed_key:
+                _ensure_agent_api_key_for_lookup(force=True)
+                refreshed_key = True
+            elif exc.code < 500 and exc.code != 429:
+                raise
+        except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError, RuntimeError) as exc:
+            last_error = exc
+
+        if attempt < CENTRAL_DEATH_LOOKUP_MAX_ATTEMPTS:
+            time.sleep(min(1.5 * attempt, 4.0))
+
+    if last_error:
+        raise last_error
+    raise RuntimeError("API Center lookup failed")
+
+
+def _central_death_connection_error_message(error_text: str) -> str:
+    text = str(error_text or "").strip()
+    timeout = "timed out" in text.casefold() or "timeout" in text.casefold()
+    if timeout:
+        return (
+            f"เชื่อมต่อ API Center ไม่สำเร็จหลังลอง {CENTRAL_DEATH_LOOKUP_MAX_ATTEMPTS} ครั้ง "
+            f"(รอครั้งละไม่เกิน {CENTRAL_DEATH_LOOKUP_TIMEOUT_SECONDS} วินาที) "
+            "กรุณาตรวจว่าเครื่องเปิด https://apicpho.moph.go.th/api/health ได้ "
+            "และอนุญาต DataExchangeTools.exe ผ่าน Firewall/Proxy"
+        )
+    return f"ไม่สามารถเชื่อมต่อ API Center เพื่อเทียบข้อมูลการตายได้ ({text or 'connection failed'})"
 
 
 def lookup_central_death_pids(pids: list) -> dict:
