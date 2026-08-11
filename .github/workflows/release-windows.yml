@@ -1,0 +1,87 @@
+name: Release Windows EXE
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Resolve release version
+        shell: pwsh
+        run: |
+          $Version = "${{ github.ref_name }}" -replace '^v', ''
+          if ($Version -notmatch '^\d+\.\d+\.\d+$') {
+            throw "Tag must use vX.Y.Z format. Received: ${{ github.ref_name }}"
+          }
+          "RELEASE_VERSION=$Version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Validate source and release metadata
+        shell: pwsh
+        run: python scripts/check_release.py --version $env:RELEASE_VERSION
+
+      - name: Run unit tests
+        run: python -m unittest discover -p "test_*.py" -v
+
+      - name: Build one-file Windows executable
+        run: python build_exe.py
+
+      - name: Verify embedded frontend
+        run: python scripts/check_exe_bundle.py dist/DataExchangeTools.exe
+
+      - name: Create release assets and manifest
+        shell: pwsh
+        run: |
+          python make_exe_update.py `
+            --version $env:RELEASE_VERSION `
+            --exe dist/DataExchangeTools.exe `
+            --notes "Portable one-file launcher, stable per-user install, update consent alert, and cp874 startup fix"
+
+          $Manifest = Get-Content "release/latest.json" -Raw -Encoding UTF8 | ConvertFrom-Json
+          $ActualHash = (Get-FileHash "release/DataExchangeTools.exe" -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($Manifest.version -ne $env:RELEASE_VERSION) {
+            throw "Manifest version mismatch"
+          }
+          if ($Manifest.windows_exe_sha256.ToLowerInvariant() -ne $ActualHash) {
+            throw "SHA256 mismatch"
+          }
+
+      - name: Publish GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" `
+            "release/DataExchangeTools.exe" `
+            "release/DataExchangeTools-v$env:RELEASE_VERSION.exe" `
+            "release/latest.json" `
+            --repo "${{ github.repository }}" `
+            --title "Data Exchange Tools ${{ github.ref_name }}" `
+            --notes-file "RELEASE_NOTES_v$env:RELEASE_VERSION.md" `
+            --latest `
+            --verify-tag

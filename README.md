@@ -6,7 +6,8 @@
 
 - ตั้งค่าฐานข้อมูลได้เฉพาะ local admin
 - ปิด service ได้เฉพาะ local admin
-- ตรวจสอบ online update ทุก 10 นาที และรัน update script ได้เฉพาะ local admin
+- ตรวจสอบ online update ทุกครั้งที่ admin เข้าระบบและทุก 10 นาที พร้อมถามก่อนติดตั้ง
+- ปิดการแจ้งเตือนซ้ำได้เฉพาะเวอร์ชันที่เลือก และจะแจ้งใหม่เมื่อมีเวอร์ชันถัดไป
 - local admin เริ่มต้นคือ `admin` / `admin` และบังคับเปลี่ยนรหัสผ่านครั้งแรก
 - Login ด้วย `opduser.loginname` และ `opduser.passweb = MD5(password)`
 - ตั้งค่าฐานข้อมูล MySQL/MariaDB ของ HosXP ผ่านหน้าเว็บ
@@ -26,9 +27,9 @@
 
 ## Release ปัจจุบัน
 
-- Version: `v0.1.9`
-- รายละเอียด: [`RELEASE_NOTES_v0.1.9.md`](RELEASE_NOTES_v0.1.9.md)
-- ขั้นตอน Pull, Build Windows และเผยแพร่: [`RELEASE_CHECKLIST_v0.1.9.md`](RELEASE_CHECKLIST_v0.1.9.md)
+- Version: `v0.1.10`
+- รายละเอียด: [`RELEASE_NOTES_v0.1.10.md`](RELEASE_NOTES_v0.1.10.md)
+- ขั้นตอน Pull, Build Windows และเผยแพร่: [`RELEASE_CHECKLIST_v0.1.10.md`](RELEASE_CHECKLIST_v0.1.10.md)
 - Workflow มาตรฐานสำหรับ Release รุ่นถัดไป: [`RELEASE_WORKFLOW.md`](RELEASE_WORKFLOW.md)
 
 ## วิธีรันบน Windows
@@ -95,7 +96,7 @@ Login ด้วย local admin แล้วกดปุ่ม “ปิด servi
 
 ## การอัปเดตโปรแกรมแบบ Online
 
-เมื่อ service เริ่มทำงาน ระบบจะตรวจ online manifest อัตโนมัติ 1 ครั้ง ถ้าพบ `windows_exe_url` บน Windows build แบบ `.exe` ระบบจะดาวน์โหลด ตรวจ `sha256` สั่งแทนที่ไฟล์ `.exe` และ restart service เพื่อใช้เวอร์ชันใหม่ ถ้าเป็น `frontend_zip_url` จะดาวน์โหลด ตรวจ `sha256` และติดตั้งไฟล์ frontend ลงโฟลเดอร์ `static/` ให้เองทันที ผู้ใช้ refresh browser แล้วจะได้หน้าเว็บเวอร์ชันล่าสุด
+เมื่อ admin เข้าระบบหรือ refresh หน้าเว็บ ระบบจะตรวจ online manifest และแสดง alert ถ้าพบเวอร์ชันใหม่ ผู้ใช้เลือกอัปเดตตอนนี้หรือไว้ภายหลังได้ และสามารถติ๊กไม่ให้แจ้งซ้ำเฉพาะเวอร์ชันนั้น การอัปเดต EXE จะตรวจ `sha256`, แทนที่ service ในตำแหน่งติดตั้งถาวร และ restart อัตโนมัติ ส่วน frontend update จะติดตั้งลงโฟลเดอร์ `static/` แล้ว refresh หน้าเว็บ
 
 หลังจากนั้นระบบยังตรวจ update จาก online manifest ทุก 10 นาทีเมื่อ admin ใช้งานอยู่ และยัง fallback ไปใช้ไฟล์ในโฟลเดอร์ `updates/` ได้ถ้าเช็ก online ไม่สำเร็จ
 
@@ -113,10 +114,10 @@ https://github.com/manoth/data-exchange-tools/releases/latest/download/latest.js
 UPDATE_MANIFEST_URL=https://your-domain.example/data-exchange-tools/latest.json
 ```
 
-ถ้าไม่ต้องการให้ service auto update ตอนเริ่มรัน สามารถปิดได้ด้วย:
+ค่าเริ่มต้นจะถามก่อนอัปเดต หากเป็นเครื่องที่บริหารจากส่วนกลางและต้องการเปิด auto update ตอนเริ่ม service ให้กำหนด:
 
 ```bash
-AUTO_UPDATE_ON_STARTUP=0
+AUTO_UPDATE_ON_STARTUP=1
 ```
 
 ตัวอย่าง `latest.json` สำหรับ GitHub Release หรือ update server
@@ -192,7 +193,7 @@ https://github.com/manoth/data-exchange-tools/releases/latest/download/latest.js
 - Windows `.exe` สามารถใช้ `windows_exe_url` และ `windows_exe_sha256` เพื่อให้โปรแกรมดาวน์โหลด exe ใหม่ แทนที่ตัวเอง และเปิดโปรแกรมใหม่อัตโนมัติ
 - Frontend-only update สามารถใช้ `frontend_zip_url` และ `frontend_zip_sha256` เพื่อให้ service ที่กำลังรันอยู่เปลี่ยนหน้าเว็บได้ทันที แล้ว refresh หน้าเว็บ และจะถูกติดตั้งอัตโนมัติเมื่อ service เริ่มทำงานใหม่
 - online update ต้องมี `sha256` ของ exe หรือ script ให้ตรงกับไฟล์จริง
-- ระบบจะติดตั้ง frontend-only update อัตโนมัติตอนเริ่ม service และถ้าเป็น Windows `.exe` ที่มี `windows_exe_url` ระบบจะ self-update แล้ว restart ตัวเองได้ ส่วน update แบบ script ยังให้ admin กด “Update” เอง
+- ค่าเริ่มต้นให้ admin ยืนยันจาก alert ก่อนติดตั้ง; หากกำหนด `AUTO_UPDATE_ON_STARTUP=1` ระบบจึงจะติดตั้ง frontend หรือ Windows `.exe` อัตโนมัติตอนเริ่ม service
 - ถ้าใช้งาน repo แบบ private ต้องใช้ update URL ที่ client เข้าถึงได้ เช่น GitHub Release/public asset, web server ภายใน, หรือ object storage ที่กำหนดสิทธิ์ไว้
 
 คำนวณ sha256:

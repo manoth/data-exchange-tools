@@ -2446,6 +2446,48 @@ table {
   min-width: 140px;
 }
 
+.update-available-alert {
+  width: min(500px, 100%);
+}
+
+.update-alert-notes {
+  max-height: 150px;
+  margin: -8px 0 18px;
+  padding: 12px 14px;
+  overflow: auto;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  line-height: 1.5;
+  text-align: left;
+  white-space: pre-wrap;
+}
+
+.update-alert-checkbox {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  line-height: 1.45;
+  text-align: left;
+  cursor: pointer;
+}
+
+.update-alert-checkbox input {
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  flex: 0 0 auto;
+  accent-color: var(--accent-blue);
+}
+
 /* ============================================================
    LOADING
    ============================================================ */

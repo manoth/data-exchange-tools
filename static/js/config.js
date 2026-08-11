@@ -274,6 +274,83 @@ async function checkConfigStatus() {
   }
 }
 
+const UPDATE_NOTICE_DISMISS_PREFIX = 'dex_update_notice_dismissed:';
+const promptedUpdateVersions = new Set();
+
+function updateNoticeStorageKey(version) {
+  return `${UPDATE_NOTICE_DISMISS_PREFIX}${String(version || '').trim()}`;
+}
+
+function isUpdateNoticeDismissed(version) {
+  try {
+    return localStorage.getItem(updateNoticeStorageKey(version)) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function saveUpdateNoticePreference(version, dismissed) {
+  if (!dismissed) return;
+  try {
+    localStorage.setItem(updateNoticeStorageKey(version), '1');
+  } catch {
+    // The alert still works when browser storage is unavailable.
+  }
+}
+
+function showUpdateAvailableAlert(updateInfo) {
+  return new Promise(resolve => {
+    const version = String(updateInfo.latest_version || '').trim();
+    const existing = document.querySelector('.sweet-alert-overlay');
+    if (existing) existing.remove();
+
+    const overlay = document.createElement('div');
+    overlay.className = 'sweet-alert-overlay';
+    const notes = String(updateInfo.notes || '').trim();
+    overlay.innerHTML = `
+      <div class="sweet-alert sweet-alert-info update-available-alert" role="dialog" aria-modal="true" aria-labelledby="update-alert-title">
+        <div class="sweet-alert-icon"><svg xmlns="http://www.w3.org/2000/svg" width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m17 8-5-5-5 5"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/></svg></div>
+        <h3 id="update-alert-title">พบ Data Exchange Tools เวอร์ชันใหม่</h3>
+        <p>พร้อมอัปเดตจาก v${escapeHtml(updateInfo.current_version || '-')} เป็น v${escapeHtml(version)}</p>
+        ${notes ? `<div class="update-alert-notes">${escapeHtml(notes)}</div>` : ''}
+        <label class="update-alert-checkbox">
+          <input type="checkbox" class="update-alert-dismiss">
+          <span>ไม่ต้องแจ้งเตือนเวอร์ชัน v${escapeHtml(version)} นี้อีก</span>
+        </label>
+        <div class="sweet-alert-actions">
+          <button type="button" class="btn btn-secondary update-alert-later">ไว้ภายหลัง</button>
+          <button type="button" class="btn btn-primary update-alert-install">อัปเดตตอนนี้</button>
+        </div>
+      </div>`;
+
+    const close = updateNow => {
+      const dismissed = Boolean(overlay.querySelector('.update-alert-dismiss')?.checked);
+      saveUpdateNoticePreference(version, dismissed);
+      overlay.remove();
+      resolve(updateNow);
+    };
+    overlay.addEventListener('click', event => {
+      if (event.target === overlay) close(false);
+    });
+    overlay.querySelector('.update-alert-later').addEventListener('click', () => close(false));
+    overlay.querySelector('.update-alert-install').addEventListener('click', () => close(true));
+    document.body.appendChild(overlay);
+    overlay.querySelector('.update-alert-install').focus();
+  });
+}
+
+async function maybeShowUpdateAvailableAlert(updateInfo) {
+  const version = String(updateInfo?.latest_version || '').trim();
+  if (!version || !updateInfo?.update_available || promptedUpdateVersions.has(version)) return;
+  if (isUpdateNoticeDismissed(version)) return;
+
+  // This Set lives only until the page is refreshed. Choosing "later" therefore
+  // prompts again on the next refresh, while the checkbox persists per version.
+  promptedUpdateVersions.add(version);
+  const updateNow = await showUpdateAvailableAlert(updateInfo);
+  if (updateNow) await runUpdateScript(true);
+}
+
 /**
  * Check online/local update manifest. Admin only.
  */
@@ -324,7 +401,7 @@ async function checkVersionUpdate(force = true, silent = false) {
       updateBtnLabel.textContent = `อัปเดตเป็น v${result.latest_version}`;
     }
     if (updateBtn) updateBtn.classList.remove('hidden');
-    if (silent) showToast(`มี update v${result.latest_version}`, 'info');
+    await maybeShowUpdateAvailableAlert(result);
   } else {
     if (statusDiv) {
       statusDiv.className = 'connection-status success';
@@ -342,9 +419,16 @@ async function checkVersionUpdate(force = true, silent = false) {
 /**
  * Run detected update script. Admin only.
  */
-async function runUpdateScript() {
-  const confirmed = window.confirm('ยืนยันเริ่ม online update? ถ้าเป็น update หน้าเว็บ ระบบจะ refresh หน้าให้เอง');
-  if (!confirmed) return;
+async function runUpdateScript(skipConfirmation = false) {
+  if (!skipConfirmation) {
+    const confirmed = await showConfirmAlert({
+      title: 'ยืนยันการอัปเดต',
+      message: 'ระบบจะดาวน์โหลดและติดตั้งเวอร์ชันใหม่ หากเป็น EXE service จะปิดและเปิดใหม่อัตโนมัติ',
+      confirmText: 'เริ่มอัปเดต',
+      cancelText: 'ยกเลิก'
+    });
+    if (!confirmed) return;
+  }
 
   const statusDiv = document.getElementById('version-status');
   const updateBtn = document.getElementById('btn-run-update');

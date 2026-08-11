@@ -7,6 +7,16 @@ import windows_launcher
 
 
 class WindowsLauncherTests(unittest.TestCase):
+    def test_install_executable_uses_stable_per_user_program_directory(self):
+        executable = windows_launcher.get_install_executable({
+            "LOCALAPPDATA": r"C:\Users\Demo\AppData\Local",
+        })
+
+        self.assertEqual(
+            executable,
+            Path(r"C:\Users\Demo\AppData\Local") / "Programs" / "DataExchangeTools" / "DataExchangeTools.exe",
+        )
+
     def test_parses_legacy_frontend_version_only_for_our_product(self):
         self.assertEqual(
             windows_launcher.parse_legacy_frontend_version(
@@ -101,6 +111,26 @@ class WindowsLauncherTests(unittest.TestCase):
             self.assertEqual(selected, target.resolve())
             self.assertEqual(version, "0.2.0")
             self.assertEqual(target.read_bytes(), b"new-installed")
+
+    def test_portable_launcher_is_copied_to_stable_location(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = root / "download" / "DataExchangeTools.exe"
+            target = root / "local-app-data" / "Programs" / "DataExchangeTools" / "DataExchangeTools.exe"
+            data_dir = root / "local-app-data" / "DataExchangeTools"
+            source.parent.mkdir()
+            source.write_bytes(b"portable-one-file-executable")
+
+            with patch.object(windows_launcher, "get_install_executable", return_value=target):
+                selected, version = windows_launcher.prepare_service_executable(
+                    str(source), "0.1.10", str(data_dir)
+                )
+
+            source.unlink()
+            self.assertEqual(selected, target.resolve())
+            self.assertEqual(version, "0.1.10")
+            self.assertEqual(target.read_bytes(), b"portable-one-file-executable")
+            self.assertTrue((data_dir / windows_launcher.INSTALL_STATE_FILENAME).is_file())
 
 
 if __name__ == "__main__":

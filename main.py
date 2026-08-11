@@ -43,7 +43,7 @@ from database import get_connection
 from db_compat import start_read_only_transaction
 
 # กำหนด path
-APP_VERSION = "0.1.9"
+APP_VERSION = "0.1.10"
 APP_HOST = os.environ.get("APP_HOST", "0.0.0.0")
 APP_PORT = int(os.environ.get("PORT", "8899"))
 APP_URL = os.environ.get("APP_URL", f"http://localhost:{APP_PORT}")
@@ -58,7 +58,9 @@ WEB_VERSION_FILE = os.path.join(UPDATE_DIR, "frontend_version.json")
 DEFAULT_UPDATE_MANIFEST_URL = "https://github.com/manoth/data-exchange-tools/releases/latest/download/latest.json"
 UPDATE_MANIFEST_URL = os.environ.get("UPDATE_MANIFEST_URL", DEFAULT_UPDATE_MANIFEST_URL).strip()
 UPDATE_CHECK_INTERVAL_SECONDS = int(os.environ.get("UPDATE_CHECK_INTERVAL_SECONDS", "600"))
-AUTO_UPDATE_ON_STARTUP = os.environ.get("AUTO_UPDATE_ON_STARTUP", "1").strip().lower() not in ("0", "false", "no", "off")
+# Updates are announced in the web UI and require an explicit admin decision.
+# Automatic startup installation remains available as an opt-in for managed sites.
+AUTO_UPDATE_ON_STARTUP = os.environ.get("AUTO_UPDATE_ON_STARTUP", "0").strip().lower() not in ("0", "false", "no", "off")
 BUNDLED_STATIC_DIR = (
     os.path.join(sys._MEIPASS, "static")
     if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS")
@@ -3039,29 +3041,46 @@ async def get_history_detail(
 # Entry Point
 # ────────────────────────────────────────────
 
+def _configure_standard_streams():
+    """Make frozen Windows startup safe on legacy cp874 consoles.
+
+    PyInstaller windowed builds may expose stdout/stderr as ``None``. Other
+    Windows launches can expose a cp874 stream that cannot encode emoji. Both
+    cases must be handled before any startup message is written.
+    """
+    for stream_name in ("stdout", "stderr"):
+        stream = getattr(sys, stream_name, None)
+        if stream is None:
+            setattr(sys, stream_name, open(os.devnull, "w", encoding="utf-8"))
+            continue
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            try:
+                reconfigure(encoding="utf-8", errors="replace")
+            except (OSError, ValueError):
+                pass
+
+
 if __name__ == "__main__":
     import uvicorn
 
-    # PyInstaller --windowed on Windows sets stdout/stderr to None. Uvicorn's
-    # logging formatter expects them to exist, so point them at the null device.
-    if sys.stdout is None:
-        sys.stdout = open(os.devnull, "w", encoding="utf-8")
-    if sys.stderr is None:
-        sys.stderr = open(os.devnull, "w", encoding="utf-8")
+    _configure_standard_streams()
 
-    # พิมพ์ banner
-    print()
-    print("=" * 50)
-    print("  ⚙️  Data Exchange Tools")
-    print("=" * 50)
-    print(f"  🌐 URL: {APP_URL}")
-    print(f"  📁 Uploads: {UPLOADS_DIR}")
-    print("=" * 50)
-    print()
-
+    # A portable EXE is only the launcher. Install/copy the service to the
+    # stable per-user program directory before starting the web application.
     if os.name == "nt" and getattr(sys, "frozen", False) and not SERVICE_MODE:
         from windows_launcher import run_windows_launcher
         sys.exit(run_windows_launcher(APP_VERSION, APP_URL, APP_PORT, APP_DIR, sys.executable))
+
+    # Keep the service banner compatible with every Windows console code page.
+    print()
+    print("=" * 50)
+    print("  Data Exchange Tools")
+    print("=" * 50)
+    print(f"  URL: {APP_URL}")
+    print(f"  Uploads: {UPLOADS_DIR}")
+    print("=" * 50)
+    print()
 
     if _is_port_open(port=APP_PORT):
         if not SERVICE_MODE:
