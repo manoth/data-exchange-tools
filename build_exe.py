@@ -14,6 +14,18 @@ import subprocess
 import sys
 
 
+def configure_standard_streams():
+    """Keep build output printable on Windows runners using legacy code pages."""
+    for stream_name in ("stdout", "stderr"):
+        stream = getattr(sys, stream_name, None)
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            try:
+                reconfigure(encoding="utf-8", errors="replace")
+            except (OSError, ValueError):
+                pass
+
+
 def create_pyinstaller_command(base_dir):
     """Create a deterministic PyInstaller command for the application."""
     main_script = os.path.join(base_dir, 'main.py')
@@ -134,6 +146,7 @@ def build():
 
 
 if __name__ == '__main__':
+    configure_standard_streams()
     print("=" * 50)
     print("  Data Exchange Tools - Build Script")
     print("  สร้างไฟล์ .exe สำหรับ Windows")
